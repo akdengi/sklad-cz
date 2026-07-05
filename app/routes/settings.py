@@ -183,19 +183,31 @@ def _sftp_makedirs(sftp, path):
             sftp.mkdir(current)
 
 
-def _remote_backup(sftp, remote_db, remote_backups_dir):
+def _remote_backup(sftp, remote_db, remote_backups_dir, ssh_client=None):
     _sftp_makedirs(sftp, remote_backups_dir)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_name = f"backup_{ts}.db"
     backup_path = f"{remote_backups_dir}/{backup_name}"
     if _sftp_stat(sftp, remote_db):
-        with sftp.open(remote_db, "rb") as src:
-            with sftp.open(backup_path, "wb") as dst:
-                while True:
-                    chunk = src.read(65536)
-                    if not chunk:
+        copied = False
+        if ssh_client:
+            for cmd in (f"cp '{remote_db}' '{backup_path}'",
+                        f"copy '{remote_db}' '{backup_path}'"):
+                try:
+                    _, stdout, _ = ssh_client.exec_command(cmd)
+                    if stdout.channel.recv_exit_status() == 0:
+                        copied = True
                         break
-                    dst.write(chunk)
+                except Exception:
+                    continue
+        if not copied:
+            with sftp.open(remote_db, "rb") as src:
+                with sftp.open(backup_path, "wb") as dst:
+                    while True:
+                        chunk = src.read(65536)
+                        if not chunk:
+                            break
+                        dst.write(chunk)
         backups = []
         for f in sftp.listdir_attr(remote_backups_dir):
             if f.filename.startswith("backup_") and f.filename.endswith(".db"):
