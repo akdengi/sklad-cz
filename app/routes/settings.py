@@ -271,9 +271,19 @@ def _do_sync(direction):
                 except Exception as e:
                     logger.error(f"[sync] push: put ошибка: {e}")
                     raise
+                remote_settings = f"{remote_instance}/settings.json"
                 if (BASE_DIR / "instance" / "settings.json").exists():
+                    if _sftp_stat(sftp, remote_settings):
+                        try:
+                            with sftp.open(remote_settings, "rb") as src:
+                                data = src.read()
+                            with sftp.open(f"{remote_settings}.bak", "wb") as dst:
+                                dst.write(data)
+                            logger.info(f"[sync] push: settings.json.bak создан")
+                        except Exception as e:
+                            logger.warning(f"[sync] push: settings.json.bak не создан: {e}")
                     try:
-                        sftp.put(str(BASE_DIR / "instance" / "settings.json"), f"{remote_instance}/settings.json")
+                        sftp.put(str(BASE_DIR / "instance" / "settings.json"), remote_settings)
                         logger.info(f"[sync] push: settings.json синхронизирован")
                     except Exception as e:
                         logger.error(f"[sync] push: settings put ошибка: {e}")
