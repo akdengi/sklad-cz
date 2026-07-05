@@ -236,7 +236,6 @@ def _do_sync(direction):
         logger.info(f"[sync] SFTP открыт")
         try:
             remote_instance = f"{settings['remote_dir']}/instance"
-            remote_backups = f"{settings['remote_dir']}/backups"
             remote_db = f"{remote_instance}/inventory.db"
 
             if direction == "push":
@@ -245,8 +244,6 @@ def _do_sync(direction):
                 local_size = DB_PATH.stat().st_size
                 logger.info(f"[sync] push: локальная база {DB_PATH} ({local_size} байт)")
                 _sftp_makedirs(sftp, remote_instance)
-                logger.info(f"[sync] push: создание резервной копии на сервере...")
-                _remote_backup(sftp, remote_db, remote_backups)
                 remote_bak = f"{remote_db}.bak"
                 if _sftp_stat(sftp, remote_db):
                     sftp.rename(remote_db, remote_bak)
