@@ -254,6 +254,16 @@ def _do_sync(direction):
                 except Exception as e:
                     logger.error(f"[sync] push: makedirs ошибка: {e}")
                     raise
+                if _sftp_stat(sftp, remote_db):
+                    try:
+                        bak_path = f"{remote_db}.bak"
+                        with sftp.open(remote_db, "rb") as src:
+                            data = src.read()
+                        with sftp.open(bak_path, "wb") as dst:
+                            dst.write(data)
+                        logger.info(f"[sync] push: бэкап создан ({len(data)} байт)")
+                    except Exception as e:
+                        logger.warning(f"[sync] push: бэкап не создан: {e}")
                 try:
                     logger.info(f"[sync] push: загрузка базы на сервер...")
                     sftp.put(str(DB_PATH), remote_db)
