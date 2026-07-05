@@ -254,26 +254,19 @@ def _do_sync(direction):
                 except Exception as e:
                     logger.error(f"[sync] push: makedirs ошибка: {e}")
                     raise
-                remote_bak = f"{remote_db}.bak"
-                if _sftp_stat(sftp, remote_db):
-                    try:
-                        sftp.rename(remote_db, remote_bak)
-                        logger.info(f"[sync] push: rename OK -> {remote_bak}")
-                    except Exception as e:
-                        logger.error(f"[sync] push: rename ошибка: {e}")
-                        raise
                 try:
                     logger.info(f"[sync] push: загрузка базы на сервер...")
                     sftp.put(str(DB_PATH), remote_db)
-                    logger.info(f"[sync] push: put OK")
+                    logger.info(f"[sync] push: база загружена")
                 except Exception as e:
                     logger.error(f"[sync] push: put ошибка: {e}")
                     raise
-                remote_size = sftp.stat(remote_db).st_size
-                logger.info(f"[sync] push: база загружена, размер на сервере {remote_size} байт")
                 if (BASE_DIR / "instance" / "settings.json").exists():
-                    sftp.put(str(BASE_DIR / "instance" / "settings.json"), f"{remote_instance}/settings.json")
-                    logger.info(f"[sync] push: settings.json синхронизирован")
+                    try:
+                        sftp.put(str(BASE_DIR / "instance" / "settings.json"), f"{remote_instance}/settings.json")
+                        logger.info(f"[sync] push: settings.json синхронизирован")
+                    except Exception as e:
+                        logger.error(f"[sync] push: settings put ошибка: {e}")
                 sync_status["last_result"] = f"Загружено на {settings['host']}"
                 sync_status["restart_required"] = False
 
