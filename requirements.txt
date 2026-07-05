@@ -1,0 +1,13 @@
+flask
+flask-sqlalchemy
+flask-cors
+python-dotenv
+Pillow
+treepoem
+paramiko
+requests>=2.31.0
+pywin32>=306; sys_platform == "win32"
+pycades>=1.1.4; sys_platform != "win32"
+pypiwin32; sys_platform == "win32"
+flask_sqlalchemy; sys_platform == "linux"
+flask_cors; sys_platform == "linux"

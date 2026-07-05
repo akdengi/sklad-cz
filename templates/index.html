@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="ru-RU" data-bs-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Товароучёт + ЧЗ</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<style>
+body { background: #f0f2f5; }
+.navbar-brand i { font-size: 1.4rem; }
+.card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.stat-card { text-align: center; padding: 1.2rem; }
+.stat-card .num { font-size: 2rem; font-weight: 700; }
+.stat-card .lbl { font-size: .75rem; text-transform: uppercase; color: #6c757d; letter-spacing: .5px; }
+.code-box { background: #f8f9fa; border: 1px dashed #dee2e6; padding: 6px 10px; font-family: monospace; font-size: 11px; border-radius: 6px; word-break: break-all; max-width: 480px; }
+.sortable { cursor: pointer; user-select: none; }
+.sortable:hover { background: #e9ecef !important; }
+.sortable.active { background: #cfe2ff !important; color: #0d6efd; }
+.toast-container { z-index: 1090; }
+.modal-disposal { background: #fff3cd; border: 1px solid #ffc107; border-radius: .5rem; padding: 1rem; margin-top: 1rem; }
+.modal-disposal h6 { color: #664d03; }
+.import-log { background: #f8f9fa; border: 1px solid #dee2e6; padding: .75rem; border-radius: .5rem; font-family: monospace; font-size: 12px; max-height: 220px; overflow: auto; white-space: pre-wrap; }
+.scan-counter { font-size: 3rem; font-weight: 700; color: #6f42c1; text-align: center; }
+.scan-history { max-height: 220px; overflow: auto; font-size: 13px; }
+.scan-history-item { padding: 6px 10px; border-bottom: 1px solid #e9ecef; }
+.unit-without-cz { background: #fff3cd !important; }
+.unit-returned > td { background: #f8d7da !important; }
+.progress-marking { width: 120px; }
+#sell-confirm-modal .card { border-width: 2px; }
+#sell-confirm-modal .card-header { font-weight: 600; }
+</style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-3">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="#"><i class="bi bi-box-seam"></i> Товароучёт + ЧЗ</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navMain">
+      <ul class="navbar-nav me-auto" id="nav">
+        <li class="nav-item"><a class="nav-link active" href="#" data-tab="dashboard"><i class="bi bi-speedometer2"></i> Сводка</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-tab="quicksell"><i class="bi bi-lightning"></i> Продажа</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-tab="warehouses"><i class="bi bi-building"></i> Склады</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-tab="skus"><i class="bi bi-tags"></i> Товары</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-tab="stock"><i class="bi bi-boxes"></i> Остатки</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-tab="sold"><i class="bi bi-cart-check"></i> Продано</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-tab="disposal"><i class="bi bi-arrow-up-right"></i> Вывод из оборота</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-tab="scan"><i class="bi bi-upc-scan"></i> Сканирование</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-tab="import"><i class="bi bi-cloud-upload"></i> Импорт</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-tab="labels"><i class="bi bi-tag"></i> Этикетки</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-tab="settings"><i class="bi bi-gear"></i> Настройка</a></li>
+      </ul>
+      <form class="d-flex me-3" onsubmit="globalSearch(event)" style="max-width:300px">
+        <div class="input-group input-group-sm">
+          <input type="text" class="form-control" id="global-search" placeholder="Поиск по коду ЧЗ...">
+          <button class="btn btn-outline-light" type="submit"><i class="bi bi-search"></i></button>
+        </div>
+      </form>
+      <button class="btn btn-outline-light btn-sm me-3" onclick="location.reload()" title="Обновить"><i class="bi bi-arrow-clockwise"></i></button>
+      <span class="navbar-text text-secondary" style="font-size:12px">v{{ app_version }} · Flask · SQLite</span>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid" style="max-width:1600px">
+
+<!-- ===== DASHBOARD ===== -->
+<div id="tab-dashboard" class="tab">
+  <div class="card mb-3"><div class="card-body">
+    <h5 class="card-title mb-3"><i class="bi bi-speedometer2"></i> Сводка</h5>
+    <div class="row g-3" id="summary"></div>
+  </div></div>
+  <div class="card"><div class="card-body">
+    <h5 class="card-title mb-3"><i class="bi bi-clock-history"></i> Последние операции</h5>
+    <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0" id="recent-table">
+      <thead class="table-light"><tr><th>#</th><th>SKU</th><th>Артикул</th><th>Склад</th><th>Статус</th><th>Заказ</th><th>ЧЗ</th><th>Вывод из оборота</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    </div>
+  </div></div>
+</div>
+
+<!-- ===== QUICK SELL ===== -->
+<div id="tab-quicksell" class="tab d-none">
+  <div class="card mb-3"><div class="card-body">
+    <h5 class="card-title mb-3"><i class="bi bi-lightning"></i> Быстрая продажа</h5>
+    <div class="row g-3 mb-3">
+      <div class="col-md-6">
+        <label class="form-label fw-semibold">Код маркировки ЧЗ</label>
+        <textarea class="form-control font-monospace" id="qs-cz" rows="3" placeholder="Отсканируйте или вставьте код ЧЗ..." oninput="handleQuickSellInput()"></textarea>
+        <small class="text-muted" id="qs-cz-status"></small>
+        <small class="text-muted">Для товаров <strong>с маркировкой</strong>. Требуется отчёт о выбытии в ЧЗ.</small>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-semibold">Артикул / EAN-13 (без ЧЗ)</label>
+        <input type="text" class="form-control" id="qs-no-marking" placeholder="Артикул или EAN-13 товара без маркировки..." oninput="handleNoMarkingInput()">
+        <small class="text-muted" id="qs-no-marking-status"></small>
+        <small class="text-muted">Для товаров <strong>без маркировки</strong>. Отчёт о выбытии не потребуется.</small>
+      </div>
+    </div>
+    <div class="row g-3 mb-3">
+      <div class="col-md-6">
+        <label class="form-label fw-semibold">Целевой склад (откуда списать)</label>
+        <select class="form-select" id="qs-target-warehouse"></select>
+        <small class="text-muted">Виртуальный склад маркетплейса для продажи</small>
+        <div class="alert alert-danger py-1 px-2 mt-1 mb-0 small d-none" id="qs-warehouse-warning"></div>
+      </div>
+    </div>
+    <div id="qs-find-result"></div>
+    <div class="row g-3 mb-3">
+      <div class="col-md-4"><label class="form-label fw-semibold">Номер заказа *</label><input type="text" class="form-control" id="qs-order" placeholder="№ заказа" oninput="validateQuickSell()"></div>
+      <div class="col-md-4"><label class="form-label fw-semibold">Цена (руб) *</label><input type="number" class="form-control" id="qs-price" step="0.01" min="0" placeholder="0.00" oninput="validateQuickSell()"></div>
+      <div class="col-md-4 d-flex align-items-end"><button class="btn btn-success btn-lg w-100" id="qs-sell-btn" onclick="processQuickSell()" disabled><i class="bi bi-lightning"></i> Продать</button></div>
+    </div>
+    <div id="qs-result"></div>
+  </div></div>
+  <div class="card"><div class="card-body">
+    <h5 class="card-title mb-3"><i class="bi bi-search"></i> Поиск товара</h5>
+    <div class="row g-2 mb-3">
+      <div class="col-md-8"><input type="text" class="form-control" id="qs-find-code" placeholder="Код ЧЗ / EAN-13 / артикул для поиска..."></div>
+      <div class="col-md-4"><button class="btn btn-primary w-100" onclick="findUnitByCode()"><i class="bi bi-search"></i> Найти товар</button></div>
+    </div>
+  </div></div>
+</div>
+
+<!-- ===== WAREHOUSE EDIT MODAL ===== -->
+<div class="modal fade" id="warehouse-modal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title" id="warehouse-modal-title">Склад</h5><button type="button" class="btn-close" onclick="closeWarehouseModal()"></button></div>
+      <div class="modal-body">
+        <div class="mb-3"><label class="form-label fw-semibold">Название</label><input type="text" class="form-control" id="wh-name"></div>
+        <div class="mb-3"><label class="form-label fw-semibold">Тип</label>
+          <select class="form-select" id="wh-type">
+            <option value="physical">Физический</option>
+            <option value="virtual">Виртуальный (маркетплейс)</option>
+          </select>
+        </div>
+        <div class="mb-3"><label class="form-label fw-semibold">Цвет</label>
+          <div class="d-flex align-items-center gap-2">
+            <input type="color" class="form-control form-control-color" id="wh-color" value="#0d6efd">
+            <span id="wh-color-hex" class="text-muted font-monospace">#0d6efd</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" onclick="closeWarehouseModal()">Отмена</button><button type="button" class="btn btn-primary" onclick="saveWarehouse()">Сохранить</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== WAREHOUSES ===== -->
+<div id="tab-warehouses" class="tab d-none">
+  <div class="card"><div class="card-body">
+    <h5 class="card-title mb-3"><i class="bi bi-building"></i> Управление складами</h5>
+    <div class="mb-3">
+      <button class="btn btn-primary btn-sm" onclick="openWarehouseModal()"><i class="bi bi-plus-lg"></i> Новый склад</button>
+    </div>
+    <div id="warehouse-list"></div>
+  </div></div>
+</div>
+
+<!-- ===== SKUS ===== -->
+<div id="tab-skus" class="tab d-none">
+  <div class="card"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="card-title mb-0"><i class="bi bi-tags"></i> Товары (SKU)</h5>
+      <button class="btn btn-primary" onclick="openSkuModal()"><i class="bi bi-plus-lg"></i> Новый SKU</button>
+    </div>
+    <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0" id="sku-table">
+      <thead class="table-light"><tr><th>ID</th><th>Название</th><th>Артикул</th><th>ТН ВЭД</th><th>GTIN-14</th><th>EAN-13</th><th>Дата произв.</th><th>Тираж</th><th>Маркировка</th><th>Действия</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    </div>
+  </div></div>
+</div>
+
+<!-- ===== STOCK ===== -->
+<div id="tab-stock" class="tab d-none">
+  <div class="card"><div class="card-body">
+    <h5 class="card-title mb-3"><i class="bi bi-boxes"></i> Остатки</h5>
+    <div class="row g-2 mb-3 align-items-end">
+      <div class="col-auto"><label class="form-label small fw-semibold">Склад</label><select class="form-select form-select-sm" id="stock-filter"></select></div>
+      <div class="col-auto"><label class="form-label small fw-semibold">SKU</label><select class="form-select form-select-sm" id="stock-sku-filter"><option value="all">Все</option></select></div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Статус</label>
+        <select class="form-select form-select-sm" id="stock-status-filter">
+          <option value="all">Все</option>
+          <option value="0">Не указан</option><option value="1">Эмитирован</option>
+          <option value="2">Нанесён</option><option value="3">В обороте</option>
+          <option value="4">Продан</option><option value="5">Выбыл</option>
+        </select>
+      </div>
+      <div class="col-auto"><div class="form-check"><input class="form-check-input" type="checkbox" id="stock-no-cz"><label class="form-check-label small fw-semibold" for="stock-no-cz">Только без ЧЗ</label></div></div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Поиск</label><input type="text" class="form-control form-control-sm" id="stock-search" placeholder="ID, код ЧЗ, артикул" style="width:200px"></div>
+    </div>
+    <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0" id="stock-table">
+      <thead class="table-light"><tr>
+        <th class="sortable" data-sort="id">ID <i class="bi bi-arrow-down-up small"></i></th>
+        <th class="sortable" data-sort="sku_name">SKU <i class="bi bi-arrow-down-up small"></i></th>
+        <th class="sortable" data-sort="article">Артикул <i class="bi bi-arrow-down-up small"></i></th>
+        <th class="sortable" data-sort="warehouse">Склад <i class="bi bi-arrow-down-up small"></i></th>
+        <th class="sortable" data-sort="status">Статус <i class="bi bi-arrow-down-up small"></i></th>
+        <th>Код ЧЗ</th><th>Действия</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    </div>
+    <div id="stock-pagination"></div>
+  </div></div>
+</div>
+
+<!-- ===== SOLD ===== -->
+<div id="tab-sold" class="tab d-none">
+  <div class="card mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="card-title mb-0"><i class="bi bi-cart-check"></i> Проданные товары</h5>
+      <div class="d-flex gap-3 align-items-center">
+        <div><span class="text-muted">Продано:</span> <strong id="sold-count">0</strong> ед.</div>
+        <div><span class="text-muted">На сумму:</span> <strong id="sold-total-price" class="text-success fs-5">0 ₽</strong></div>
+      </div>
+    </div>
+    <div class="row g-2 mb-3 align-items-end">
+      <div class="col-auto"><label class="form-label small fw-semibold">SKU</label><select class="form-select form-select-sm" id="sold-sku-filter"><option value="all">Все</option></select></div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Склад</label><select class="form-select form-select-sm" id="sold-warehouse-filter"><option value="all">Все</option></select></div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Дата с</label><div class="input-group input-group-sm"><input type="text" class="form-control" id="sold-date-from" placeholder="дд.мм.гггг" style="width:110px" readonly><input type="date" class="d-none" id="sold-date-from-pick"><button class="btn btn-outline-secondary" type="button" onclick="openDatePicker('sold-date-from')"><i class="bi bi-calendar3"></i></button></div></div>
+      <div class="col-auto"><label class="form-label small fw-semibold">по</label><div class="input-group input-group-sm"><input type="text" class="form-control" id="sold-date-to" placeholder="дд.мм.гггг" style="width:110px" readonly><input type="date" class="d-none" id="sold-date-to-pick"><button class="btn btn-outline-secondary" type="button" onclick="openDatePicker('sold-date-to')"><i class="bi bi-calendar3"></i></button></div></div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Сортировка</label>
+        <select class="form-select form-select-sm" id="sold-sort">
+          <option value="date_desc">Дата ↓</option><option value="date_asc">Дата ↑</option>
+          <option value="id_desc">ID ↓</option><option value="id_asc">ID ↑</option>
+          <option value="sku_asc">SKU ↑</option><option value="sku_desc">SKU ↓</option>
+          <option value="warehouse_asc">Склад ↑</option><option value="warehouse_desc">Склад ↓</option>
+          <option value="order_asc">Заказ ↑</option><option value="order_desc">Заказ ↓</option>
+          <option value="disposal_asc">Вывод из оборота ↑</option><option value="disposal_desc">Вывод из оборота ↓</option>
+          <option value="price_asc">Цена ↑</option><option value="price_desc">Цена ↓</option>
+        </select>
+      </div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Поиск</label><input type="text" class="form-control form-control-sm" id="sold-search" placeholder="ID, код ЧЗ, заказ, артикул" style="width:200px"></div>
+    </div>
+    <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0" id="sold-table">
+      <thead class="table-light"><tr>
+        <th>#</th><th>SKU</th><th>Артикул</th><th>Склад</th><th>Заказ</th><th>Дата продажи</th><th>Цена</th><th>Продан</th><th>Статус ЧЗ</th><th>Вывод из оборота</th><th>Код ЧЗ</th><th></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    </div>
+    <div id="sold-pagination"></div>
+  </div></div>
+</div>
+
+<!-- ===== DISPOSAL ===== -->
+<div id="tab-disposal" class="tab d-none">
+  <div class="card"><div class="card-body">
+    <h5 class="card-title mb-3"><i class="bi bi-arrow-up-right"></i> Отчёты о выводе из оборота в Честный Знак</h5>
+    <div class="row g-2 mb-3 align-items-end">
+      <div class="col-auto"><label class="form-label small fw-semibold">Склад</label><select class="form-select form-select-sm" id="disposal-warehouse-filter"><option value="all">Все</option></select></div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Статус</label>
+        <select class="form-select form-select-sm" id="disposal-status-filter">
+          <option value="all">Все</option>
+          <option value="0">Не начато</option>
+          <option value="1">Отправлено в ЧЗ</option><option value="2">Подтверждено ЧЗ</option>
+        </select>
+      </div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Дата с</label><div class="input-group input-group-sm"><input type="text" class="form-control" id="disposal-date-from" placeholder="дд.мм.гггг" style="width:110px" readonly><input type="date" class="d-none" id="disposal-date-from-pick"><button class="btn btn-outline-secondary" type="button" onclick="openDatePicker('disposal-date-from')"><i class="bi bi-calendar3"></i></button></div></div>
+      <div class="col-auto"><label class="form-label small fw-semibold">по</label><div class="input-group input-group-sm"><input type="text" class="form-control" id="disposal-date-to" placeholder="дд.мм.гггг" style="width:110px" readonly><input type="date" class="d-none" id="disposal-date-to-pick"><button class="btn btn-outline-secondary" type="button" onclick="openDatePicker('disposal-date-to')"><i class="bi bi-calendar3"></i></button></div></div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Сортировка</label>
+        <select class="form-select form-select-sm" id="disposal-sort">
+          <option value="date_desc">Дата ↓</option><option value="date_asc">Дата ↑</option>
+          <option value="id_desc">ID ↓</option><option value="id_asc">ID ↑</option>
+          <option value="sku_asc">SKU ↑</option><option value="sku_desc">SKU ↓</option>
+          <option value="warehouse_asc">Склад ↑</option><option value="warehouse_desc">Склад ↓</option>
+          <option value="price_asc">Цена ↑</option><option value="price_desc">Цена ↓</option>
+        </select>
+      </div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Поиск</label><input type="text" class="form-control form-control-sm" id="disposal-search" placeholder="ID, код ЧЗ, SKU, артикул" style="width:200px"></div>
+    </div>
+    <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0" id="disposal-table">
+      <thead class="table-light"><tr><th>ID</th><th>SKU</th><th>Код ЧЗ</th><th>Склад</th><th>Тип операции</th><th>Причина</th><th>Документ</th><th>Дата</th><th>Цена</th><th>Статус</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    </div>
+    <div id="disposal-pagination"></div>
+  </div></div>
+</div>
+
+<!-- ===== SCAN ===== -->
+<div id="tab-scan" class="tab d-none">
+  <div class="card"><div class="card-body">
+    <h5 class="card-title mb-3"><i class="bi bi-upc-scan"></i> Быстрое сканирование кодов ЧЗ</h5>
+    <div class="row g-2 mb-3">
+      <div class="col-auto"><label class="form-label small fw-semibold">SKU</label><select class="form-select form-select-sm" id="scan-sku"></select></div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Склад</label><select class="form-select form-select-sm" id="scan-warehouse"></select></div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Статус</label>
+        <select class="form-select form-select-sm" id="scan-status">
+          <option value="1" selected>Эмитирован</option>
+          <option value="2">Нанесён</option><option value="3">В обороте</option>
+        </select>
+      </div>
+    </div>
+    <div class="scan-counter" id="scan-counter">0</div>
+    <div class="mb-3">
+      <textarea class="form-control" id="scan-cz" placeholder="Вставьте код ЧЗ..." rows="3" oninput="handleScanInput()"></textarea>
+    </div>
+    <div class="d-flex gap-2 mb-3">
+      <button class="btn btn-purple" style="background:#7c3aed;color:#fff" onclick="processScan()"><i class="bi bi-check-lg"></i> Обработать</button>
+      <button class="btn btn-outline-secondary" onclick="clearScanHistory()">Очистить историю</button>
+      <button class="btn btn-outline-success" onclick="resetScanCounter()">Сбросить счётчик</button>
+    </div>
+    <div id="scan-result"></div>
+    <div class="scan-history" id="scan-history"></div>
+  </div></div>
+</div>
+
+<!-- ===== IMPORT ===== -->
+<div id="tab-import" class="tab d-none">
+  <div class="card"><div class="card-body">
+    <h5 class="card-title mb-3"><i class="bi bi-cloud-upload"></i> Массовый импорт кодов ЧЗ</h5>
+    <div class="row g-2 mb-3">
+      <div class="col-auto"><label class="form-label small fw-semibold">SKU</label><select class="form-select form-select-sm" id="imp-sku"></select></div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Склад</label><select class="form-select form-select-sm" id="imp-loc"></select></div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Статус</label>
+        <select class="form-select form-select-sm" id="imp-status">
+          <option value="0">Не указан</option><option value="1" selected>Эмитирован</option>
+          <option value="2">Нанесён</option><option value="3">В обороте</option>
+        </select>
+      </div>
+    </div>
+    <h6>Из CSV/TSV/TXT</h6>
+    <div class="d-flex gap-2 mb-3 align-items-center">
+      <input type="file" class="form-control form-control-sm" id="imp-csv" accept=".csv,.tsv,.txt" style="max-width:320px">
+      <button class="btn btn-primary btn-sm" onclick="importCSV()">Импортировать CSV</button>
+    </div>
+    <div id="import-log" class="import-log d-none"></div>
+  </div></div>
+</div>
+
+<!-- ===== LABELS ===== -->
+<div id="tab-labels" class="tab d-none">
+  <div class="card"><div class="card-body">
+    <h5 class="card-title mb-3"><i class="bi bi-tag"></i> Генерация этикеток</h5>
+    <div class="row g-3 mb-3">
+      <div class="col-auto"><label class="form-label small fw-semibold">SKU</label><select class="form-select form-select-sm" id="lbl-sku"></select></div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Размер</label>
+        <select class="form-select form-select-sm" id="lbl-size">
+          <option value="50x50">50 x 50 мм</option>
+          <option value="58x40">58 x 40 мм</option>
+          <option value="50x60">50 x 60 мм</option>
+          <option value="58x30">58 x 30 мм</option>
+          <option value="50x25">50 x 25 мм</option>
+        </select>
+      </div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Макет</label>
+        <select class="form-select form-select-sm" id="lbl-layout">
+          <option value="full">Вся информация</option>
+          <option value="km_only">Только КМ (DataMatrix)</option>
+          <option value="barcode_only">Только штрихкод</option>
+          <option value="name_only">Только название</option>
+        </select>
+      </div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Номера</label><input type="text" class="form-control form-control-sm" id="lbl-range" value="#1-#5" placeholder="#1, #3-#7" style="width:140px"></div>
+      <div class="col-auto"><label class="form-label small fw-semibold">Копий</label><input type="number" class="form-control form-control-sm" id="lbl-total" value="1" min="1" style="width:70px"></div>
+      <div class="col-auto d-flex gap-1 align-items-end">
+        <button class="btn btn-success btn-sm" onclick="printLabels()"><i class="bi bi-printer"></i> Печать</button>
+        <button class="btn btn-primary btn-sm" onclick="downloadLabels()"><i class="bi bi-file-earmark-pdf"></i> PDF</button>
+        <button class="btn btn-outline-primary btn-sm" onclick="downloadPrintLabels('zpl')"><i class="bi bi-download"></i> ZPL</button>
+        <button class="btn btn-outline-primary btn-sm" onclick="downloadPrintLabels('tspl')"><i class="bi bi-download"></i> TSPL</button>
+      </div>
+    </div>
+    <div class="row g-2 mb-3 align-items-end">
+      <div class="col-auto">
+        <input type="text" class="form-control form-control-sm font-monospace" id="lbl-cz-search" placeholder="Поиск по коду ЧЗ..." style="width:300px" oninput="searchSkuByCz()">
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('lbl-cz-search').value='';document.getElementById('lbl-cz-search-status').textContent=''"><i class="bi bi-x"></i></button>
+      </div>
+      <div class="col-auto"><small class="text-muted" id="lbl-cz-search-status"></small></div>
+    </div>
+    <div class="alert alert-light small mb-0">
+      <strong>Номера:</strong> #1, #1-#5, #1,#3,#7 &middot; <strong>Копий:</strong> сколько одинаковых наклеек с каждым номером &middot;
+      <strong>Размеры:</strong> 50x50, 58x40, 50x60, 58x30, 50x25 мм
+    </div>
+  </div></div>
+</div>
+
+<!-- ===== SETTINGS ===== -->
+<div id="tab-settings" class="tab d-none">
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="card"><div class="card-body">
+        <h5 class="card-title mb-3"><i class="bi bi-geo-alt"></i> Адрес вывода из оборота по умолчанию</h5>
+        <div class="mb-3"><label class="form-label small fw-semibold">Адрес</label><input type="text" class="form-control form-control-sm" id="cz-default-address" placeholder="г. Город, ул. Пример, д. 1"></div>
+        <div class="mb-3"><label class="form-label small fw-semibold">FIAS ID</label><input type="text" class="form-control form-control-sm font-monospace" id="cz-default-fias" placeholder="00000000-0000-0000-0000-000000000000"></div>
+        <small class="text-muted d-block mb-3">Посмотреть FIAS ID для адреса можно на сайте <a href="https://fias.nalog.ru" target="_blank">fias.nalog.ru</a></small>
+        <button class="btn btn-primary btn-sm" onclick="saveCZSettings()"><i class="bi bi-check-lg"></i> Сохранить</button>
+        <span id="cz-settings-status" class="ms-2 small"></span>
+      </div></div>
+    </div>
+    <div class="col-md-6">
+      <div class="card"><div class="card-body">
+        <h5 class="card-title mb-3"><i class="bi bi-gear"></i> Экспорт / Импорт данных</h5>
+        <div class="d-flex gap-2 flex-wrap">
+          <button class="btn btn-primary" onclick="exportJSON()"><i class="bi bi-download"></i> Экспорт JSON</button>
+          <label class="btn btn-outline-primary" style="cursor:pointer">
+            <i class="bi bi-upload"></i> Импорт JSON
+            <input type="file" accept=".json" onchange="importJSON(event)" style="display:none">
+          </label>
+          <button class="btn btn-outline-secondary" onclick="exportCSVUnits()">Экспорт единиц CSV</button>
+          <button class="btn btn-outline-secondary" onclick="exportDisposalCSV()"><i class="bi bi-arrow-up-right"></i> Экспорт вывода из оборота CSV</button>
+          <button class="btn btn-danger" onclick="if(confirm('Удалить ВСЕ данные?'))fetch('/api/reset',{method:'POST'}).then(()=>location.reload())"><i class="bi bi-trash"></i> Очистить всё</button>
+        </div>
+      </div></div>
+    </div>
+    <div class="col-12">
+      <div class="card"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="card-title mb-0"><i class="bi bi-database"></i> Бэкапы базы данных</h5>
+          <span class="text-muted small" id="backup-remaining"></span>
+        </div>
+        <div class="d-flex gap-3 align-items-center mb-3">
+          <button class="btn btn-primary btn-sm" onclick="createBackup()"><i class="bi bi-plus-lg"></i> Создать бэкап</button>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="backup-rotation" onchange="toggleRotation()">
+            <label class="form-check-label small fw-semibold" for="backup-rotation">Ротация (авто-бэкап при каждом входе)</label>
+          </div>
+        </div>
+        <div id="backup-list"></div>
+      </div></div>
+    </div>
+    <div class="col-12">
+      <div class="card"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="card-title mb-0"><i class="bi bi-cloud-arrow-up-down"></i> Удалённая синхронизация</h5>
+          <span class="text-muted small" id="sync-status-badge"></span>
+        </div>
+        <div class="row g-3 mb-3" autocomplete="off">
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">Сервер (IP)</label>
+            <input type="text" class="form-control form-control-sm" id="sync-host" placeholder="IP-адрес сервера" autocomplete="off">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small fw-semibold">Логин</label>
+            <input type="text" class="form-control form-control-sm" id="sync-user" placeholder="root" autocomplete="off">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small fw-semibold">Пароль</label>
+            <div class="input-group input-group-sm">
+              <input type="password" class="form-control" id="sync-password" placeholder="пароль" autocomplete="new-password">
+              <button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('sync-password', this)"><i class="bi bi-eye"></i></button>
+            </div>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label small fw-semibold">Путь на сервере</label>
+            <input type="text" class="form-control form-control-sm" id="sync-remote-dir" placeholder="/path/to/Sklad" autocomplete="off">
+          </div>
+        </div>
+        <div class="d-flex gap-2 mb-3">
+          <button class="btn btn-success btn-sm" id="sync-push-btn" onclick="syncPush()"><i class="bi bi-cloud-upload"></i> Загрузить на сервер</button>
+          <button class="btn btn-info btn-sm" id="sync-pull-btn" onclick="syncPull()"><i class="bi bi-cloud-download"></i> Скачать с сервера</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="saveSyncSettings()"><i class="bi bi-check-lg"></i> Сохранить настройки</button>
+        </div>
+        <div id="sync-log" class="import-log d-none" style="max-height:120px"></div>
+      </div></div>
+    </div>
+    <div class="col-12">
+      <div class="card"><div class="card-body">
+        <h5 class="card-title mb-3"><i class="bi bi-shield-lock"></i> Честный Знак — статусы</h5>
+        <div class="row g-2 mb-3">
+          <div class="col-md-8">
+            <label class="form-label small fw-semibold">URL API</label>
+            <select class="form-select form-select-sm" id="cz-api-url-select" onchange="document.getElementById('cz-api-url').value=this.value">
+              <option value="https://markirovka.crpt.ru/api/v3/true-api">markirovka.crpt.ru</option>
+            </select>
+            <input type="text" class="form-control form-control-sm mt-1 font-monospace" id="cz-api-url" placeholder="https://markirovka.crpt.ru/api/v3/true-api">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">ИНН организации</label>
+            <input type="text" class="form-control form-control-sm" id="cz-inn" placeholder="1234567890" maxlength="12">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">PIN токена</label>
+            <div class="input-group input-group-sm">
+              <input type="password" class="form-control" id="cz-key-pin" placeholder="PIN">
+              <button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('cz-key-pin', this)"><i class="bi bi-eye"></i></button>
+            </div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Отпечаток сертификата (SHA-1)</label>
+          <div class="input-group input-group-sm">
+            <input type="text" class="form-control font-monospace" id="cz-cert-thumbprint" placeholder="ABC123DEF456...">
+            <button class="btn btn-outline-secondary" onclick="czFindCerts()" title="Найти сертификаты в системе"><i class="bi bi-search"></i> Найти</button>
+          </div>
+          <small class="text-muted">Вставьте отпечаток вручную или нажмите «Найти» для выбора из списка</small>
+        </div>
+        <div id="cz-certs-list" class="mb-3 d-none">
+          <label class="form-label small fw-semibold">Доступные сертификаты:</label>
+          <div id="cz-certs-container" style="max-height:200px;overflow:auto"></div>
+        </div>
+        <div class="d-flex gap-2 mb-2 flex-wrap">
+          <button class="btn btn-primary btn-sm" onclick="saveCZAllSettings()"><i class="bi bi-check-lg"></i> Сохранить все настройки</button>
+          <button class="btn btn-outline-success btn-sm" onclick="czTestAuth()"><i class="bi bi-key"></i> Проверить авторизацию</button>
+          <button class="btn btn-outline-info btn-sm" onclick="czDiagnose()"><i class="bi bi-heart-pulse"></i> Диагностика</button>
+          <button class="btn btn-warning btn-sm" id="cz-check-all-btn" onclick="czCheckAll()"><i class="bi bi-arrow-clockwise"></i> Обновить статусы всех товаров</button>
+        </div>
+        <div class="row g-2 mb-3 mt-2">
+          <div class="col-md-8">
+            <input type="number" class="form-control form-control-sm" id="cz-debug-unit-id" placeholder="ID единицы для отладки (напр. 81)">
+          </div>
+          <div class="col-md-4">
+            <button class="btn btn-outline-dark btn-sm w-100" onclick="czDebugUnit()"><i class="bi bi-bug"></i> Отладка запроса</button>
+          </div>
+        </div>
+        <div id="cz-auth-status" class="small mb-2"></div>
+        <div id="cz-check-status-badge" class="small mb-2"></div>
+        <div id="cz-check-log" class="import-log d-none" style="max-height:100px"></div>
+      </div></div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<!-- ===== SKU MODAL ===== -->
+<div class="modal fade" id="sku-modal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title" id="sku-modal-title">Новый SKU</h5><button type="button" class="btn-close" onclick="closeSkuModal()"></button></div>
+      <div class="modal-body">
+        <div class="mb-3"><label class="form-label fw-semibold">Название *</label><input type="text" class="form-control" id="sku-name"></div>
+        <div class="mb-3">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="sku-has-marking" checked onchange="toggleMarkingFields()">
+            <label class="form-check-label fw-semibold" for="sku-has-marking">С маркировкой (ЧЗ)</label>
+          </div>
+          <small class="text-muted">Если снят — товар продаётся по EAN-13 без кода маркировки</small>
+        </div>
+        <div class="mb-3"><label class="form-label fw-semibold">Артикул</label><input type="text" class="form-control" id="sku-article" placeholder="СОН33"></div>
+        <div class="mb-3"><label class="form-label fw-semibold">Код ТН ВЭД</label>
+          <div class="input-group">
+            <input type="text" class="form-control" id="sku-tnved" placeholder="напр. 8471300000" maxlength="20" oninput="onTnvedInput()">
+            <button class="btn btn-outline-secondary" type="button" onclick="openTnvedSearch(event)" title="Поиск по описанию"><i class="bi bi-search"></i></button>
+          </div>
+          <div id="tnved-results" class="list-group mt-1 d-none" style="max-height:200px;overflow-y:auto"></div>
+        </div>
+        <div class="mb-3"><label class="form-label fw-semibold" for="sku-gtin">GTIN-14 *</label><input type="text" class="form-control" id="sku-gtin" maxlength="14" oninput="autoEAN()"><small class="text-muted">Обязателен для товаров с маркировкой</small></div>
+        <div class="mb-3"><label class="form-label fw-semibold">EAN-13</label><input type="text" class="form-control" id="sku-ean" maxlength="13"></div>
+        <div class="mb-3"><label class="form-label fw-semibold">Дата производства</label><input type="date" class="form-control" id="sku-date"></div>
+        <div class="mb-3"><label class="form-label fw-semibold">Тираж</label><input type="number" class="form-control" id="sku-total" min="0" value="0"></div>
+        <div class="mb-3"><label class="form-label fw-semibold">Разрешит. документация</label><textarea class="form-control" id="sku-permit" rows="3"></textarea></div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" onclick="closeSkuModal()">Отмена</button><button type="button" class="btn btn-primary" onclick="saveSku()">Сохранить</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== BATCH MODAL ===== -->
+<div class="modal fade" id="batch-modal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Создать партию на складе</h5><button type="button" class="btn-close" onclick="closeBatchModal()"></button></div>
+      <div class="modal-body">
+        <div class="mb-3"><label class="form-label fw-semibold">SKU</label><select class="form-select" id="batch-sku"></select></div>
+        <div class="mb-3"><label class="form-label fw-semibold">Склад</label><select class="form-select" id="batch-warehouse"></select></div>
+        <div class="mb-3"><label class="form-label fw-semibold">Количество</label><input type="number" class="form-control" id="batch-count" min="1" value="100"></div>
+        <small class="text-muted" id="batch-hint">Количество товаров добавляемых на склад</small>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" onclick="closeBatchModal()">Отмена</button><button type="button" class="btn btn-success" onclick="createBatch()"><i class="bi bi-check-lg"></i> Создать</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== UNIT MODAL ===== -->
+<div class="modal fade" id="unit-modal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title" id="unit-modal-title">Единица товара</h5><button type="button" class="btn-close" onclick="closeUnitModal()"></button></div>
+      <div class="modal-body">
+        <div class="alert alert-danger d-none" id="dup-warning"><i class="bi bi-exclamation-triangle"></i> Этот код ЧЗ уже существует!</div>
+        <div class="mb-3"><label class="form-label fw-semibold">SKU</label><select class="form-select" id="unit-sku" onchange="onUnitSkuChange()"></select></div>
+        <div id="unit-cz-fields">
+        <div class="mb-3"><label class="form-label fw-semibold">Код ЧЗ</label>
+          <textarea class="form-control font-monospace" id="unit-cz" rows="3" oninput="checkDuplicate()"></textarea>
+          <div class="d-flex align-items-center gap-2 mt-1">
+            <span id="cz-check-status" class="small"></span>
+            <button class="btn btn-outline-secondary btn-sm" onclick="pasteCZ()"><i class="bi bi-clipboard"></i> Вставить из буфера</button>
+            <button class="btn btn-outline-info btn-sm" id="cz-check-btn" onclick="czCheckFromEdit()"><i class="bi bi-arrow-clockwise"></i> Проверить статус ЧЗ</button>
+          </div>
+        </div>
+        <div class="row g-3 mb-3" id="unit-sold-fields">
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Статус ЧЗ</label>
+            <div id="unit-cz-status-display" class="form-control form-control-sm bg-light" style="min-height:38px">
+              <span class="text-muted">— не проверен —</span>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Статус</label>
+            <select class="form-select form-select-sm" id="unit-status-select">
+              <option value="0">— не указан —</option><option value="1">Эмитирован</option><option value="2">Нанесён</option><option value="3">В обороте</option><option value="5">Выбыл</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Продан</label>
+            <div class="form-check form-switch mt-1">
+              <input class="form-check-input" type="checkbox" id="unit-sold-check" onchange="onSoldCheckChange()">
+              <label class="form-check-label" for="unit-sold-check">Товар продан</label>
+            </div>
+          </div>
+          <input type="hidden" id="unit-status" value="0">
+          <input type="hidden" id="unit-cz-status-val" value="">
+          <div class="col-md-4 unit-sold-only"><label class="form-label fw-semibold">Дата продажи</label><div class="input-group"><input type="text" class="form-control" id="unit-sold-date" placeholder="дд.мм.гггг" readonly><input type="date" class="d-none" id="unit-sold-date-pick"><button class="btn btn-outline-secondary" type="button" onclick="openDatePicker('unit-sold-date')"><i class="bi bi-calendar3"></i></button></div></div>
+          <div class="col-md-4 unit-sold-only"><label class="form-label fw-semibold">Номер заказа</label><input type="text" class="form-control" id="unit-order"></div>
+        </div>
+        </div>
+        <div class="mb-3"><label class="form-label fw-semibold">Склад</label><select class="form-select" id="unit-loc"></select></div>
+
+        <div class="modal-disposal" id="disposal-section">
+          <h6><i class="bi bi-arrow-up-right"></i> Данные для отчёта о выводе из оборота</h6>
+          <div class="row g-3">
+            <div class="col-md-6"><label class="form-label small fw-semibold">Тип операции</label>
+              <select class="form-select form-select-sm" id="unit-disposal-type">
+                <option value="">— не выбран —</option><option value="shipment">Перед отгрузкой</option><option value="return">При возврате товара</option>
+              </select>
+            </div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Причина вывода из оборота</label>
+              <select class="form-select form-select-sm" id="unit-disposal-reason">
+                <option value="">— не выбрана —</option>
+                <option value="remote_sale">Дистанционная продажа</option><option value="remote_sale_return">Возврат при дистанц. продаже</option>
+                <option value="own_needs">Использование для собственных нужд</option>
+                <option value="production">Использование для производственных целей</option>
+                <option value="gratuitous_transfer">Безвозмездная передача</option>
+                <option value="eea_sale">Трансграничная продажа в страны ЕЭАС</option>
+                <option value="export_eaes">Экспорт за пределы ЕАЭС</option>
+                <option value="loss">Утрата</option>
+                <option value="market_recall">Отзыв товара с рынка</option>
+              </select>
+            </div>
+            <div class="col-md-4 disposal-docs-required"><label class="form-label small fw-semibold">Вид первичного документа</label>
+              <select class="form-select form-select-sm" id="unit-disposal-doc-type">
+                <option value="">— не выбран —</option>
+                <option value="прочее">прочее</option><option value="товарная накладная">товарная накладная</option>
+                <option value="акт приема-передачи">акт приема-передачи</option><option value="кассовый чек">кассовый чек</option><option value="УПД">УПД</option>
+              </select>
+            </div>
+            <div class="col-md-8 disposal-docs-required"><label class="form-label small fw-semibold">Наименование документа</label><input type="text" class="form-control form-control-sm" id="unit-disposal-doc-name" placeholder="Напр. Заказ №123"></div>
+            <div class="col-md-4 disposal-docs-required"><label class="form-label small fw-semibold">Номер документа</label><input type="text" class="form-control form-control-sm" id="unit-disposal-doc-number"></div>
+            <div class="col-md-4 disposal-docs-required"><label class="form-label small fw-semibold">Дата документа</label><input type="date" class="form-control form-control-sm" id="unit-disposal-doc-date"></div>
+            <div class="col-md-4 disposal-docs-required"><label class="form-label small fw-semibold">Цена за ед. (руб)</label><input type="number" class="form-control form-control-sm" id="unit-disposal-price" step="0.01" min="0"></div>
+            <div class="col-12"><label class="form-label small fw-semibold">Адрес места выбытия *</label>
+              <input type="text" class="form-control form-control-sm" id="unit-disposal-address" placeholder="г. Город, ул. Пример, д. 1">
+            </div>
+            <div class="col-12"><label class="form-label small fw-semibold">FIAS ID</label>
+              <input type="text" class="form-control form-control-sm font-monospace" id="unit-disposal-fias-id" placeholder="00000000-0000-0000-0000-000000000000">
+            </div>
+            <div class="col-md-4"><label class="form-label small fw-semibold">Статус отчёта</label>
+              <select class="form-select form-select-sm" id="unit-disposal-status">
+                <option value="0">Не начато</option>
+                <option value="1">Отправлено в ЧЗ</option><option value="2">Подтверждено ЧЗ</option>
+              </select>
+            </div>
+          </div>
+          <small class="text-muted mt-2 d-block" id="disposal-hint"></small>
+        </div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" onclick="closeUnitModal()">Отмена</button><button type="button" class="btn btn-primary" id="unit-save-btn" onclick="saveUnit()">Сохранить</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== UNIT DETAIL MODAL ===== -->
+<div class="modal fade" id="unit-detail-modal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Детали единицы</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body" id="unit-detail-content"></div>
+      <div class="modal-footer"><button type="button" class="btn btn-primary" data-bs-dismiss="modal">Закрыть</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== RETURN MODAL ===== -->
+<div class="modal fade" id="return-modal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Возврат товара</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="return-unit-id">
+        <div class="mb-3"><label class="form-label fw-semibold">Склад для возврата</label><select class="form-select" id="return-warehouse"></select></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+        <button type="button" class="btn btn-warning" onclick="processReturn()"><i class="bi bi-arrow-counterclockwise"></i> Вернуть на склад</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SELL CONFIRM MODAL ===== -->
+<div class="modal fade" id="sell-confirm-modal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title"><i class="bi bi-lightning"></i> Подтверждение продажи</h5>
+        <button type="button" class="btn-close btn-close-white" onclick="closeSellConfirmModal()"></button>
+      </div>
+      <div class="modal-body" id="sell-confirm-body">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-lg" onclick="closeSellConfirmModal()"><i class="bi bi-x-lg"></i> Отменить</button>
+        <button type="button" class="btn btn-success btn-lg" id="sell-confirm-btn" onclick="confirmQuickSell()"><i class="bi bi-lightning"></i> Продать</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+  <div id="appToast" class="toast" role="alert"><div class="toast-body"></div></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>

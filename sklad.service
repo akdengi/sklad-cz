@@ -1,0 +1,29 @@
+[Unit]
+Description=Sklad Python Application
+After=network.target
+
+[Service]
+# Тип сервиса (simple - если скрипт работает постоянно в фоне)
+Type=simple
+
+# От чьего имени запускать (root, так как папка в /root/)
+User=root
+Group=root
+
+# Рабочая директория (важно, если в скрипте используются относительные пути)
+WorkingDirectory=/opt/sklad
+
+# Команда запуска.
+# Если используете виртуальное окружение, замените /usr/bin/python3 на /opt/sklad/venv/bin/python
+ExecStart=/usr/bin/python3 /opt/sklad/run.py
+
+# Перезапуск при падении
+Restart=always
+RestartSec=5
+
+# Перенаправление вывода в логи systemd (стандартное поведение, но можно явно указать)
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
