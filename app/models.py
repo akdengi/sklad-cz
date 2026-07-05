@@ -152,6 +152,7 @@ class Unit(db.Model):
             "disposal_price": self.disposal_price,
             "disposal_status": self.disposal_status,
             "was_returned": bool(self.was_returned),
+            "has_marking": bool(self.sku.has_marking) if self.sku else True,
             "cz_status": self.cz_status or "",
             "cz_check_date": self.cz_check_date or "",
             "updated_at": self.updated_at.isoformat() if self.updated_at else self.created_at.isoformat() if self.created_at else "",

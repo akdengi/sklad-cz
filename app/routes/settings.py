@@ -219,7 +219,7 @@ def _do_sync(direction):
 
         logger.info(f"[sync] Подключение к {settings['host']}...")
         client = _create_ssh(settings["host"], settings["user"], settings["password"])
-        logger.info(f"[sync] SSH подключён, открываем SFTP...")
+        logger.info(f"[sync] SSH подключен, открываем SFTP...")
         sftp = client.open_sftp()
         logger.info(f"[sync] SFTP открыт")
         try:

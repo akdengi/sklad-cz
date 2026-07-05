@@ -142,7 +142,7 @@ def export_csv_units():
     buf.write("\ufeff")
     w = csv.writer(buf, delimiter=";")
     w.writerow(["ID", "SKU", "Артикул", "GTIN-14", "EAN-13", "Код ЧЗ", "Статус", "Склад", "Номер заказа", "Дата продажи",
-                "Тип выбытия", "Причина", "Вид док.", "Номер док.", "Дата док.", "Адрес", "Цена", "Статус отчёта"])
+                "Тип выбытия", "Причина", "Вид док.", "Номер док.", "Дата док.", "Адрес", "Цена", "Статус отчета"])
     for u in Unit.query.options(joinedload(Unit.sku), joinedload(Unit.warehouse)).order_by(Unit.id):
         w.writerow([
             u.id, u.sku.name, u.sku.article or "", u.sku.gtin14, u.sku.ean13 or "",
@@ -172,7 +172,7 @@ def export_disposal_csv():
         "Вид первичного документа", "Наименование документа",
         "Номер документа", "Дата документа",
         "Адрес места выбытия", "Цена за единицу",
-        "Статус отчёта", "Номер заказа", "Дата продажи"
+        "Статус отчета", "Номер заказа", "Дата продажи"
     ])
     q = Unit.query.options(joinedload(Unit.sku), joinedload(Unit.warehouse)).filter(
         or_(Unit.disposal_type != None, Unit.disposal_status != 0)

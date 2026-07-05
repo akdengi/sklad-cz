@@ -200,8 +200,9 @@ function czStatusBadge(status) {
   return `<span class="badge bg-secondary">${esc(ru)}</span>`;
 }
 
-function getDeadlineInfo(soldDate) {
+function getDeadlineInfo(soldDate, hasMarking) {
   if (!soldDate) return { urgent: false, warning: false, hint: '', daysLeft: null };
+  if (hasMarking === false) return { urgent: false, warning: false, hint: '', daysLeft: null };
   const sold = new Date(soldDate);
   const now = new Date();
   const diffMs = now - sold;
@@ -249,7 +250,7 @@ async function renderDashboard() {
     { num: data.skus, lbl: 'SKU', icon: 'bi-tags', color: 'primary' },
     { num: data.units, lbl: 'Единиц на складе', icon: 'bi-boxes', color: 'primary' },
     { num: data.marked, lbl: 'Нанесено', icon: 'bi-check-circle', color: 'success' },
-    { num: data.unmarked, lbl: 'Без кода ЧЗ', icon: 'bi-exclamation-circle', color: 'warning' },
+    { num: data.unmarked, lbl: 'Без полученного КМ ЧЗ', icon: 'bi-exclamation-circle', color: 'warning' },
     { num: data.returned, lbl: 'Возвращено', icon: 'bi-arrow-counterclockwise', color: 'info' },
     { num: data.sold_units, lbl: 'Продано', icon: 'bi-cart-check', color: 'danger' },
     { num: data.sold_total_price ? data.sold_total_price.toFixed(0) + ' ₽' : '0 ₽', lbl: 'Сумма продаж', icon: 'bi-cash', color: 'success' },
@@ -292,12 +293,13 @@ async function renderDashboard() {
   if (data.by_sku && data.by_sku.length > 0) {
     const totals = data.by_sku.filter(s => s.warehouse_name === '_TOTAL_');
     if (totals.length > 0) {
-      let skuHtml = '<div class="card mt-3"><div class="card-body"><h6 class="card-title mb-3"><i class="bi bi-bar-chart"></i> Остатки по товарам</h6><div class="table-responsive"><table class="table table-sm table-hover mb-0" id="sku-dashboard-table"><thead class="table-light"><tr><th>Товар</th><th>Артикул</th><th>На складе</th><th>Промарк.</th><th>Продано</th><th>Сумма продаж</th><th>На выводе</th><th>Тираж</th></tr></thead><tbody>';
+      let skuHtml = '<div class="card mt-3"><div class="card-body"><h6 class="card-title mb-3"><i class="bi bi-bar-chart"></i> Остатки по товарам</h6><div class="table-responsive"><table class="table table-sm table-hover mb-0" id="sku-dashboard-table"><thead class="table-light"><tr><th>Товар</th><th>Артикул</th><th>ЧЗ</th><th>На складе</th><th>Промарк.</th><th>Продано</th><th>Сумма продаж</th><th>На выводе</th><th>Тираж</th></tr></thead><tbody>';
       totals.forEach(s => {
         const pct = s.edition_total > 0 ? Math.round(s.marked * 100 / s.edition_total) : 0;
         skuHtml += `<tr>
           <td><strong>${esc(s.sku_name)}</strong></td>
           <td><span class="text-primary font-monospace">${esc(s.sku_article || '—')}</span></td>
+          <td>${s.has_marking ? '<span class="badge bg-success">Да</span>' : '<span class="badge bg-secondary">Нет</span>'}</td>
           <td>${s.total}</td>
           <td><span class="text-success fw-semibold">${s.marked}</span></td>
           <td>${s.sold || 0}</td>
@@ -900,7 +902,7 @@ async function showUnitDetail(id) {
   const ozon = full.replace(/\xe8/g, '').replace(/\u001d/g, '\\u001d');
   const turn = full.split('\u001d')[0].replace(/^\xe8/, '');
   let disposalHtml = '';
-  if (u.disposal_type) {
+  if (u.disposal_type && full) {
     disposalHtml = `
       <div class="modal-disposal ${u.disposal_status >= 1 ? 'border-success' : ''}">
         <h6><i class="bi bi-arrow-up-right"></i> Данные для отчёта о выводе из оборота</h6>
@@ -1311,7 +1313,7 @@ async function confirmQuickSell() {
     const u = r.unit;
     const full = normalizeCZ(u.cz_code || '');
     const ozonCode = full.replace(/\xe8/g, '').replace(/\u001d/g, '\\u001d');
-    const deadline = getDeadlineInfo(u.sold_date);
+    const deadline = getDeadlineInfo(u.sold_date, u.has_marking);
 
     closeSellConfirmModal();
 
@@ -1510,15 +1512,15 @@ async function renderSold() {
 
   const tbody = document.querySelector('#sold-table tbody');
   tbody.innerHTML = data.units.map(u => {
-    const deadline = getDeadlineInfo(u.sold_date);
+    const deadline = getDeadlineInfo(u.sold_date, u.has_marking);
     let deadlineBadge = '';
-    if (u.disposal_status === 0 && u.sold_date) {
+    if (u.has_marking && u.disposal_status === 0 && u.sold_date) {
       if (deadline.urgent) deadlineBadge = `<span class="badge bg-danger"><i class="bi bi-exclamation-triangle"></i> Просрочено!</span>`;
       else if (deadline.warning) deadlineBadge = `<span class="badge bg-warning text-dark"><i class="bi bi-clock"></i> Сгорает!</span>`;
       else deadlineBadge = `<span class="badge bg-success"><i class="bi bi-clock"></i> ${deadline.daysLeft} дн.</span>`;
     }
     return `
-    <tr class="${u.disposal_status === 0 && deadline.urgent ? 'table-danger' : ''}">
+    <tr class="${u.has_marking && u.disposal_status === 0 && deadline.urgent ? 'table-danger' : ''}">
       <td class="font-monospace fw-bold">#${u.id}</td>
       <td>${esc(u.sku_name || '')}</td>
       <td><span class="text-primary font-monospace">${esc(u.sku_article || '—')}</span></td>
@@ -1527,8 +1529,8 @@ async function renderSold() {
       <td>${fmtDate(u.sold_date)} ${deadlineBadge}</td>
       <td class="text-success fw-semibold">${u.disposal_price ? u.disposal_price.toFixed(2) + ' ₽' : '—'}</td>
       <td>${u.sold_date ? '<i class="bi bi-check-square-fill text-success"></i>' : '<i class="bi bi-square text-muted"></i>'}</td>
-      <td>${u.cz_status ? czStatusBadge(u.cz_status) : '<span class="text-muted">—</span>'}</td>
-      <td>${disposalBadge(u.disposal_status)}</td>
+      <td>${u.has_marking ? (u.cz_status ? czStatusBadge(u.cz_status) : '<span class="text-muted">—</span>') : '<span class="text-muted">—</span>'}</td>
+      <td>${u.has_marking ? disposalBadge(u.disposal_status) : '<span class="text-muted">—</span>'}</td>
       <td>${u.cz_code ? `<div class="code-box" style="font-size:10px;max-width:150px">${esc((normalizeCZ(u.cz_code).replace(/^\xe8/, '')).split('\u001d')[0])}</div>` : '—'}</td>
       <td class="text-nowrap">
         <button class="btn btn-outline-primary btn-sm" onclick="showUnitDetail(${u.id})" title="Подробнее"><i class="bi bi-info-circle"></i></button>
@@ -1618,7 +1620,7 @@ async function renderDisposal() {
   const totalPages = Math.ceil(data.total / PER_PAGE);
   const tbody = document.querySelector('#disposal-table tbody');
   tbody.innerHTML = units.map(u => {
-    const deadline = getDeadlineInfo(u.sold_date);
+    const deadline = getDeadlineInfo(u.sold_date, u.has_marking);
     let deadlineBadge = '';
     if (u.disposal_status === 0 && u.sold_date) {
       if (deadline.urgent) deadlineBadge = `<span class="badge bg-danger ms-1"><i class="bi bi-exclamation-triangle"></i> Просрочено</span>`;
@@ -1638,7 +1640,7 @@ async function renderDisposal() {
       <td class="text-nowrap">
         <button class="btn btn-outline-primary btn-sm" onclick="showUnitDetail(${u.id})" title="Подробнее"><i class="bi bi-info-circle"></i></button>
         <button class="btn btn-outline-secondary btn-sm" onclick="openUnitModal(${u.id})" title="Изменить"><i class="bi bi-pencil"></i></button>
-        ${u.status === 5 && u.disposal_status === 3 ? `<button class="btn btn-outline-warning btn-sm" onclick="openReturnModal(${u.id})" title="Вернуть в оборот"><i class="bi bi-arrow-counterclockwise"></i></button>` : ''}
+        ${[4,5].includes(u.status) && u.disposal_status === 2 && ['RETIRED','WITHDRAWN','WRITTEN_OFF'].includes(u.cz_status) ? `<button class="btn btn-outline-warning btn-sm" onclick="openReturnModal(${u.id})" title="Вернуть в оборот"><i class="bi bi-arrow-counterclockwise"></i></button>` : ''}
       </td>
     </tr>`;
   }).join('') || '<tr><td colspan="11" class="text-center text-muted">Нет единиц для вывода из оборота</td></tr>';

@@ -43,8 +43,9 @@ def get_units():
     if request.args.get("no_cz"):
         q = q.filter(or_(Unit.cz_code == None, Unit.cz_code == ''))
     if request.args.get("q"):
-        term = f"%{request.args['q']}%"
-        search_prefix = cz_search_prefix(request.args['q'])
+        raw_q = request.args['q'].lstrip('#')
+        term = f"%{raw_q}%"
+        search_prefix = cz_search_prefix(raw_q)
         q = q.join(SKU).filter(
             or_(
                 Unit.cz_code.like(f"{FNC1}{search_prefix}%"),
@@ -146,8 +147,9 @@ def get_sold_units():
         q = q.filter(Unit.sold_date <= request.args["date_to"])
 
     if request.args.get("q"):
-        term = f"%{request.args['q']}%"
-        search_prefix = cz_search_prefix(request.args['q'])
+        raw_q = request.args['q'].lstrip('#')
+        term = f"%{raw_q}%"
+        search_prefix = cz_search_prefix(raw_q)
         q = q.join(SKU).filter(
             or_(
                 Unit.cz_code.like(f"{FNC1}{search_prefix}%"),
@@ -212,7 +214,7 @@ def return_unit(uid):
     db.session.commit()
     return jsonify({
         "unit": u.to_dict(),
-        "message": "Товар возвращён. Необходимо подать отчёт о возврате в ЛК Честный Знак!",
+        "message": "Товар возвращен. Необходимо подать отчет о возврате в ЛК Честный Знак!",
     })
 
 
@@ -241,18 +243,20 @@ def delete_sale(uid):
     db.session.commit()
     return jsonify({
         "unit": u.to_dict(),
-        "message": "Продажа удалена. Если отчёт о выбытии был подан в ЧЗ — подайте отчёт о возврате.",
+        "message": "Продажа удалена. Если отчет о выбытии был подан в ЧЗ — подайте отчет о возврате.",
     })
 
 
 @units_bp.route("/disposal", methods=["GET"])
 def get_disposal_units():
-    q = Unit.query.options(joinedload(Unit.sku), joinedload(Unit.warehouse))
+    q = db.session.query(Unit).options(joinedload(Unit.sku), joinedload(Unit.warehouse))
+    q = q.join(SKU, Unit.sku_id == SKU.id)
     q = q.filter(
         or_(
             Unit.disposal_type.isnot(None),
             Unit.disposal_status != 0,
-        )
+        ),
+        SKU.has_marking == True,
     )
     if request.args.get("warehouse_id"):
         q = q.filter(Unit.warehouse_id == int(request.args["warehouse_id"]))
@@ -263,9 +267,10 @@ def get_disposal_units():
     if request.args.get("date_to"):
         q = q.filter(Unit.sold_date <= request.args["date_to"])
     if request.args.get("q"):
-        term = f"%{request.args['q']}%"
-        search_prefix = cz_search_prefix(request.args['q'])
-        q = q.join(SKU).filter(
+        raw_q = request.args['q'].lstrip('#')
+        term = f"%{raw_q}%"
+        search_prefix = cz_search_prefix(raw_q)
+        q = q.filter(
             or_(
                 Unit.cz_code.like(f"{FNC1}{search_prefix}%"),
                 Unit.cz_code.like(f"{search_prefix}%"),
@@ -464,7 +469,7 @@ def quick_sell():
         "unit": unit.to_dict(),
         "transferred": transferred,
         "message": "Товар продан и поставлен на вывод из оборота" if not transferred
-                   else f"Код перенесён на склад «{final_wh.name}», продан и поставлен на вывод из оборота",
+                   else f"Код перенесен на склад «{final_wh.name}», продан и поставлен на вывод из оборота",
     })
 
 
@@ -544,7 +549,7 @@ def sell_no_marking():
         "unit": unit.to_dict(),
         "transferred": transferred,
         "message": "Товар продан" if not transferred
-                   else f"Товар перемещён на «{final_wh.name}» и продан",
+                   else f"Товар перемещен на «{final_wh.name}» и продан",
     })
 
 

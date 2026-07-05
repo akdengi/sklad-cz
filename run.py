@@ -57,7 +57,7 @@ if __name__ == "__main__":
     app = create_app()
     init_db(app)
     print("=" * 60)
-    print("  Товароучёт + Честный Знак v10")
+    print("  Товароучет + Честный Знак v10")
     print(f"  Python: {sys.executable}")
     print(f"  Откройте: http://{APP_HOST}:{APP_PORT}")
     print("=" * 60)

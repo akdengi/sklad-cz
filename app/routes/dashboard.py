@@ -28,7 +28,11 @@ def summary():
         Unit.cz_code != None, Unit.cz_code != '',
         Unit.status.notin_([4, 5]),
     ).count()
-    unmarked_units = total_units - marked_units
+    unmarked_units = Unit.query.join(SKU).filter(
+        SKU.has_marking == True,
+        or_(Unit.cz_code == None, Unit.cz_code == ''),
+        Unit.status.notin_([4, 5]),
+    ).count()
     returned_units = Unit.query.filter(
         Unit.was_returned == True,
         Unit.status.notin_([4, 5]),
@@ -43,7 +47,7 @@ def summary():
         Unit.disposal_status == 0,
         Unit.sold_date != None,
         Unit.status.in_([4, 5]),
-    ).count()
+    ).join(SKU).filter(SKU.has_marking == True).count()
     disposal_sent = Unit.query.filter(
         Unit.disposal_status == 2,
     ).count()
@@ -59,6 +63,8 @@ def summary():
     ).all()
     for u in sold_pending:
         try:
+            if u.sku and not u.sku.has_marking:
+                continue
             sold_dt = datetime.strptime(u.sold_date, "%Y-%m-%d").date()
             days_left = 3 - (today - sold_dt).days
             item = {
@@ -134,6 +140,7 @@ def summary():
             "sold_price": sold_price,
             "in_disposal": in_disposal,
             "edition_total": s.total_quantity or 0,
+            "has_marking": bool(s.has_marking),
         })
 
     recent = (
