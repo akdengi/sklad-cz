@@ -593,13 +593,14 @@ body { background: #f0f2f5; }
             <button class="btn btn-outline-info btn-sm" id="cz-check-btn" onclick="czCheckFromEdit()"><i class="bi bi-arrow-clockwise"></i> Проверить статус ЧЗ</button>
           </div>
         </div>
-        <div class="row g-3 mb-3" id="unit-sold-fields">
-          <div class="col-md-4">
+        <div class="mb-2">
             <label class="form-label fw-semibold">Статус ЧЗ</label>
             <div id="unit-cz-status-display" class="form-control form-control-sm bg-light" style="min-height:38px">
               <span class="text-muted">— не проверен —</span>
             </div>
-          </div>
+        </div>
+        </div>
+        <div class="row g-3 mb-3" id="unit-sold-fields">
           <div class="col-md-4">
             <label class="form-label fw-semibold">Статус</label>
             <select class="form-select form-select-sm" id="unit-status-select">
@@ -617,7 +618,6 @@ body { background: #f0f2f5; }
           <input type="hidden" id="unit-cz-status-val" value="">
           <div class="col-md-4 unit-sold-only"><label class="form-label fw-semibold">Дата продажи</label><div class="input-group"><input type="text" class="form-control" id="unit-sold-date" placeholder="дд.мм.гггг" readonly><input type="date" class="d-none" id="unit-sold-date-pick"><button class="btn btn-outline-secondary" type="button" onclick="openDatePicker('unit-sold-date')"><i class="bi bi-calendar3"></i></button></div></div>
           <div class="col-md-4 unit-sold-only"><label class="form-label fw-semibold">Номер заказа</label><input type="text" class="form-control" id="unit-order"></div>
-        </div>
         </div>
         <div class="mb-3"><label class="form-label fw-semibold">Склад</label><select class="form-select" id="unit-loc"></select></div>
 
@@ -697,6 +697,34 @@ body { background: #f0f2f5; }
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
         <button type="button" class="btn btn-warning" onclick="processReturn()"><i class="bi bi-arrow-counterclockwise"></i> Вернуть на склад</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== DELETE SALE MODAL ===== -->
+<div class="modal fade" id="delete-sale-modal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="bi bi-exclamation-triangle"></i> Удаление продажи</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="delete-sale-unit-id">
+        <div class="alert alert-danger">
+          <strong>Внимание!</strong> Удаление продажи может привести к проблемам:
+          <ul class="mb-0 mt-2">
+            <li>Если отчёт о выбытии уже подан в ЧЗ — статус в системе Честный Знак не изменится</li>
+            <li>Товар может оказаться «висячим» — числится как выбывший в ЧЗ, но не проданный в учёте</li>
+            <li>При повторной продаже потребуется новый отчёт о выбытии</li>
+          </ul>
+        </div>
+        <p class="mb-0">Вы уверены, что хотите удалить эту продажу?</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+        <button type="button" class="btn btn-danger" onclick="processDeleteSale()"><i class="bi bi-trash"></i> Да, удалить продажу</button>
       </div>
     </div>
   </div>

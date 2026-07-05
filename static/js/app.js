@@ -1534,7 +1534,8 @@ async function renderSold() {
         <button class="btn btn-outline-primary btn-sm" onclick="showUnitDetail(${u.id})" title="Подробнее"><i class="bi bi-info-circle"></i></button>
         <button class="btn btn-outline-secondary btn-sm" onclick="openUnitModal(${u.id})" title="Изменить"><i class="bi bi-pencil"></i></button>
         <button class="btn btn-outline-info btn-sm" onclick="openLabelsForUnit(${u.sku_id},${u.id})" title="Этикетка"><i class="bi bi-tag"></i></button>
-        ${u.status === 5 && u.disposal_status === 2 ? `<button class="btn btn-outline-warning btn-sm" onclick="openReturnModal(${u.id})" title="Вернуть на склад"><i class="bi bi-arrow-counterclockwise"></i></button>` : ''}
+        ${u.status === 5 && u.disposal_status === 3 ? `<button class="btn btn-outline-warning btn-sm" onclick="openReturnModal(${u.id})" title="Вернуть на склад"><i class="bi bi-arrow-counterclockwise"></i></button>` : ''}
+        <button class="btn btn-outline-danger btn-sm" onclick="openDeleteSaleModal(${u.id})" title="Удалить продажу"><i class="bi bi-trash"></i></button>
       </td>
     </tr>`;
   }).join('') || '<tr><td colspan="12" class="text-center text-muted">Нет проданных товаров</td></tr>';
@@ -1565,6 +1566,24 @@ async function processReturn() {
   try {
     const r = await api(`/api/units/${unitId}/return`, { method: 'POST', body: JSON.stringify({ warehouse_id: parseInt(warehouseId) }) });
     bootstrap.Modal.getInstance(document.getElementById('return-modal')).hide();
+    toast(r.message, 'warning');
+    renderSold();
+    renderDisposal();
+    renderStock();
+    renderDashboard();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function openDeleteSaleModal(unitId) {
+  document.getElementById('delete-sale-unit-id').value = unitId;
+  new bootstrap.Modal(document.getElementById('delete-sale-modal')).show();
+}
+
+async function processDeleteSale() {
+  const unitId = document.getElementById('delete-sale-unit-id').value;
+  try {
+    const r = await api(`/api/units/${unitId}/delete-sale`, { method: 'POST' });
+    bootstrap.Modal.getInstance(document.getElementById('delete-sale-modal')).hide();
     toast(r.message, 'warning');
     renderSold();
     renderDisposal();
@@ -1619,7 +1638,7 @@ async function renderDisposal() {
       <td class="text-nowrap">
         <button class="btn btn-outline-primary btn-sm" onclick="showUnitDetail(${u.id})" title="Подробнее"><i class="bi bi-info-circle"></i></button>
         <button class="btn btn-outline-secondary btn-sm" onclick="openUnitModal(${u.id})" title="Изменить"><i class="bi bi-pencil"></i></button>
-        ${u.status === 5 && u.disposal_status === 2 ? `<button class="btn btn-outline-warning btn-sm" onclick="openReturnModal(${u.id})" title="Вернуть в оборот"><i class="bi bi-arrow-counterclockwise"></i></button>` : ''}
+        ${u.status === 5 && u.disposal_status === 3 ? `<button class="btn btn-outline-warning btn-sm" onclick="openReturnModal(${u.id})" title="Вернуть в оборот"><i class="bi bi-arrow-counterclockwise"></i></button>` : ''}
       </td>
     </tr>`;
   }).join('') || '<tr><td colspan="11" class="text-center text-muted">Нет единиц для вывода из оборота</td></tr>';

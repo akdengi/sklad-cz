@@ -216,7 +216,33 @@ def return_unit(uid):
     })
 
 
-@units_bp.route("/disposal", methods=["GET"])
+@units_bp.route("/<int:uid>/delete-sale", methods=["POST"])
+def delete_sale(uid):
+    """Удаление ошибочной продажи — сброс единицы в исходное состояние."""
+    u = Unit.query.get_or_404(uid)
+    if u.status not in (4, 5):
+        abort(400, "Удаление продажи доступно только для проданных/выбывших товаров")
+    u.status = 0
+    u.sold_date = None
+    u.order_number = None
+    u.disposal_type = None
+    u.disposal_reason = None
+    u.disposal_doc_type = None
+    u.disposal_doc_name = None
+    u.disposal_doc_number = None
+    u.disposal_doc_date = None
+    u.disposal_address = None
+    u.disposal_fias_id = None
+    u.disposal_price = None
+    u.disposal_status = 0
+    u.cz_status = None
+    u.cz_check_date = None
+    u.updated_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({
+        "unit": u.to_dict(),
+        "message": "Продажа удалена. Если отчёт о выбытии был подан в ЧЗ — подайте отчёт о возврате.",
+    })@units_bp.route("/disposal", methods=["GET"])
 def get_disposal_units():
     q = Unit.query.options(joinedload(Unit.sku), joinedload(Unit.warehouse))
     q = q.filter(
