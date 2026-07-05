@@ -242,7 +242,10 @@ def delete_sale(uid):
     return jsonify({
         "unit": u.to_dict(),
         "message": "Продажа удалена. Если отчёт о выбытии был подан в ЧЗ — подайте отчёт о возврате.",
-    })@units_bp.route("/disposal", methods=["GET"])
+    })
+
+
+@units_bp.route("/disposal", methods=["GET"])
 def get_disposal_units():
     q = Unit.query.options(joinedload(Unit.sku), joinedload(Unit.warehouse))
     q = q.filter(
