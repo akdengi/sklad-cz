@@ -180,7 +180,12 @@ def _sftp_makedirs(sftp, path):
         try:
             sftp.stat(current)
         except FileNotFoundError:
-            sftp.mkdir(current)
+            try:
+                sftp.mkdir(current)
+            except Exception as e:
+                logger.warning(f"[sync] mkdir {current}: {e}")
+        except Exception as e:
+            logger.warning(f"[sync] stat {current}: {e}")
 
 
 def _remote_backup(sftp, remote_db, remote_backups_dir, ssh_client=None):
@@ -243,13 +248,27 @@ def _do_sync(direction):
                     raise Exception("Локальная база данных не найдена")
                 local_size = DB_PATH.stat().st_size
                 logger.info(f"[sync] push: локальная база {DB_PATH} ({local_size} байт)")
-                _sftp_makedirs(sftp, remote_instance)
+                try:
+                    _sftp_makedirs(sftp, remote_instance)
+                    logger.info(f"[sync] push: директория OK")
+                except Exception as e:
+                    logger.error(f"[sync] push: makedirs ошибка: {e}")
+                    raise
                 remote_bak = f"{remote_db}.bak"
                 if _sftp_stat(sftp, remote_db):
-                    sftp.rename(remote_db, remote_bak)
-                    logger.info(f"[sync] push: предыдущая база сохранена как {remote_bak}")
-                logger.info(f"[sync] push: загрузка базы на сервер...")
-                sftp.put(str(DB_PATH), remote_db)
+                    try:
+                        sftp.rename(remote_db, remote_bak)
+                        logger.info(f"[sync] push: rename OK -> {remote_bak}")
+                    except Exception as e:
+                        logger.error(f"[sync] push: rename ошибка: {e}")
+                        raise
+                try:
+                    logger.info(f"[sync] push: загрузка базы на сервер...")
+                    sftp.put(str(DB_PATH), remote_db)
+                    logger.info(f"[sync] push: put OK")
+                except Exception as e:
+                    logger.error(f"[sync] push: put ошибка: {e}")
+                    raise
                 remote_size = sftp.stat(remote_db).st_size
                 logger.info(f"[sync] push: база загружена, размер на сервере {remote_size} байт")
                 if (BASE_DIR / "instance" / "settings.json").exists():
