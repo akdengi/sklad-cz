@@ -1653,6 +1653,10 @@ async function renderSelects() {
   const warehouses = await api('/api/warehouses');
   const skuOpts = skus.map(s => `<option value="${s.id}">${esc(s.name)} ${s.article ? '(' + esc(s.article) + ')' : ''}</option>`).join('');
   ['lbl-sku', 'imp-sku'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = skuOpts; });
+  if (pendingLabelSkuId != null) {
+    document.getElementById('lbl-sku').value = pendingLabelSkuId;
+    pendingLabelSkuId = null;
+  }
   const impLoc = document.getElementById('imp-loc');
   if (impLoc) impLoc.innerHTML = warehouses.map(w => whOption(w)).join('');
 }
@@ -1736,13 +1740,13 @@ async function downloadPrintLabels(format) {
   toast(`${format.toUpperCase()} скачан`, 'success');
 }
 
+let pendingLabelSkuId = null;
+
 function openLabelsForUnit(skuId, unitId) {
+  pendingLabelSkuId = skuId;
   document.querySelector('#nav .nav-link[data-tab="labels"]').click();
-  setTimeout(() => {
-    document.getElementById('lbl-sku').value = skuId;
-    document.getElementById('lbl-range').value = '#' + unitId;
-    document.getElementById('lbl-total').value = '1';
-  }, 200);
+  document.getElementById('lbl-range').value = '#' + unitId;
+  document.getElementById('lbl-total').value = '1';
 }
 
 let lblCzSearchTimer = null;

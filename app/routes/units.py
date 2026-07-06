@@ -43,7 +43,7 @@ def get_units():
     if request.args.get("no_cz"):
         q = q.filter(or_(Unit.cz_code == None, Unit.cz_code == ''))
     if request.args.get("q"):
-        raw_q = request.args['q'].lstrip('#')
+        raw_q = request.args['q'].lstrip('#').strip()
         term = f"%{raw_q}%"
         search_prefix = cz_search_prefix(raw_q)
         q = q.join(SKU).filter(
@@ -147,7 +147,7 @@ def get_sold_units():
         q = q.filter(Unit.sold_date <= request.args["date_to"])
 
     if request.args.get("q"):
-        raw_q = request.args['q'].lstrip('#')
+        raw_q = request.args['q'].lstrip('#').strip()
         term = f"%{raw_q}%"
         search_prefix = cz_search_prefix(raw_q)
         q = q.join(SKU).filter(
@@ -267,13 +267,14 @@ def get_disposal_units():
     if request.args.get("date_to"):
         q = q.filter(Unit.sold_date <= request.args["date_to"])
     if request.args.get("q"):
-        raw_q = request.args['q'].lstrip('#')
+        raw_q = request.args['q'].lstrip('#').strip()
         term = f"%{raw_q}%"
         search_prefix = cz_search_prefix(raw_q)
         q = q.filter(
             or_(
                 Unit.cz_code.like(f"{FNC1}{search_prefix}%"),
                 Unit.cz_code.like(f"{search_prefix}%"),
+                Unit.order_number.ilike(term),
                 SKU.name.ilike(term),
                 SKU.article.ilike(term),
                 Unit.id.cast(db.String).ilike(term),
