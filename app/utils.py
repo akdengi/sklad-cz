@@ -153,7 +153,11 @@ def find_duplicate_unit(cz_code: str, exclude_unit_id: int = None) -> Unit:
     )
     if exclude_unit_id:
         q = q.filter(Unit.id != exclude_unit_id)
-    return q.first()
+    candidates = q.all()
+    for c in candidates:
+        if normalize_cz(c.cz_code) == normalized:
+            return c
+    return None
 
 
 def find_first_unmarked_unit(sku_id: int, warehouse_id: int = None) -> Unit:

@@ -45,11 +45,13 @@ def get_units():
     if request.args.get("q"):
         raw_q = request.args['q'].lstrip('#').strip()
         term = f"%{raw_q}%"
-        search_prefix = cz_search_prefix(raw_q)
+        norm_q = normalize_cz(raw_q)
+        search_prefix = cz_search_prefix(norm_q)
         q = q.join(SKU).filter(
             or_(
                 Unit.cz_code.like(f"{FNC1}{search_prefix}%"),
                 Unit.cz_code.like(f"{search_prefix}%"),
+                Unit.cz_code.like(f"%{raw_q}%"),
                 Unit.order_number.ilike(term),
                 SKU.name.ilike(term),
                 SKU.article.ilike(term),
@@ -149,10 +151,12 @@ def get_sold_units():
     if request.args.get("q"):
         raw_q = request.args['q'].lstrip('#').strip()
         term = f"%{raw_q}%"
-        search_prefix = cz_search_prefix(raw_q)
+        norm_q = normalize_cz(raw_q)
+        search_prefix = cz_search_prefix(norm_q)
         q = q.join(SKU).filter(
             or_(
                 Unit.cz_code.like(f"{FNC1}{search_prefix}%"),
+                Unit.cz_code.like(f"%{raw_q}%"),
                 Unit.order_number.ilike(term),
                 SKU.name.ilike(term),
                 SKU.article.ilike(term),
@@ -269,11 +273,13 @@ def get_disposal_units():
     if request.args.get("q"):
         raw_q = request.args['q'].lstrip('#').strip()
         term = f"%{raw_q}%"
-        search_prefix = cz_search_prefix(raw_q)
+        norm_q = normalize_cz(raw_q)
+        search_prefix = cz_search_prefix(norm_q)
         q = q.filter(
             or_(
                 Unit.cz_code.like(f"{FNC1}{search_prefix}%"),
                 Unit.cz_code.like(f"{search_prefix}%"),
+                Unit.cz_code.like(f"%{raw_q}%"),
                 Unit.order_number.ilike(term),
                 SKU.name.ilike(term),
                 SKU.article.ilike(term),

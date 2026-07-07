@@ -521,7 +521,7 @@ cz_check_status = {"running": False, "last_result": None, "last_error": None, "c
 def _do_cz_check_all():
     global cz_check_status
     from app import create_app, db
-    from app.models import Unit
+    from app.models import Unit, SKU
     from datetime import datetime
     app = create_app()
     with app.app_context():

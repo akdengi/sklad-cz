@@ -931,13 +931,13 @@ async function showUnitDetail(id) {
       <h6 class="mt-3">Код маркировки (КИЗ) — полный</h6>
       <div class="text-center mb-2"><img src="/api/units/${u.id}/dm-image" alt="DataMatrix КИЗ" style="max-width:200px;border:1px solid #ddd;border-radius:4px" /></div>
       <div class="code-box mb-2">${esc(full).replace(/\xe8/g, '<b class="text-primary">FNC1</b>').replace(/\u001d/g, '<b class="text-danger">GS</b>')}</div>
-      <button class="btn btn-outline-secondary btn-sm mb-2" onclick="copyText('${full.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"><i class="bi bi-clipboard"></i> Копировать</button>
+      <button class="btn btn-outline-secondary btn-sm mb-2" onclick="copyText('${full.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
       <h6>КМ для Маркетплейсов</h6>
       <div class="code-box mb-2">${esc(ozon)}</div>
-      <button class="btn btn-outline-secondary btn-sm mb-2" onclick="copyText('${ozon.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"><i class="bi bi-clipboard"></i> Копировать</button>
+      <button class="btn btn-outline-secondary btn-sm mb-2" onclick="copyText('${ozon.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
       <h6>КМ для ввода в оборот и вывода из него</h6>
       <div class="code-box mb-2">${esc(turn)}</div>
-      <button class="btn btn-outline-secondary btn-sm mb-2" onclick="copyText('${turn.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"><i class="bi bi-clipboard"></i> Копировать</button>
+      <button class="btn btn-outline-secondary btn-sm mb-2" onclick="copyText('${turn.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
     ` : '<p class="text-warning fw-semibold"><i class="bi bi-hourglass-split"></i> Нет кода ЧЗ</p>'}
     ${disposalHtml}
   `;
@@ -1038,7 +1038,7 @@ async function handleQuickSellInput() {
                 <div class="mt-2">
                   <small class="fw-semibold">КМ для Маркетплейсов:</small>
                   <div class="code-box mb-1" style="font-size:11px">${esc(ozonCode)}</div>
-                  <button class="btn btn-outline-primary btn-sm" onclick="copyText('${ozonCode.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"><i class="bi bi-clipboard"></i> Копировать</button>
+                  <button class="btn btn-outline-primary btn-sm" onclick="copyText('${ozonCode.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
                 </div>
               </div>
             </div>
@@ -1063,7 +1063,7 @@ async function handleQuickSellInput() {
                   <div class="mt-2">
                     <small class="fw-semibold">КМ для Маркетплейсов:</small>
                     <div class="code-box mb-1" style="font-size:11px">${esc(ozonCode)}</div>
-                    <button class="btn btn-outline-primary btn-sm" onclick="copyText('${ozonCode.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"><i class="bi bi-clipboard"></i> Копировать</button>
+                    <button class="btn btn-outline-primary btn-sm" onclick="copyText('${ozonCode.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
                   </div>
                 </div>
               </div>
@@ -1098,7 +1098,7 @@ async function handleQuickSellInput() {
                 <div class="mt-2">
                   <small class="fw-semibold">КМ для Маркетплейсов:</small>
                   <div class="code-box mb-1" style="font-size:11px">${esc(ozonCode)}</div>
-                  <button class="btn btn-outline-primary btn-sm" onclick="copyText('${ozonCode.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"><i class="bi bi-clipboard"></i> Копировать</button>
+                  <button class="btn btn-outline-primary btn-sm" onclick="copyText('${ozonCode.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
                 </div>
               </div>
             </div>
@@ -1326,7 +1326,7 @@ async function confirmQuickSell() {
       <div class="card mt-2"><div class="card-body">
         <h6><i class="bi bi-upc-scan"></i> КМ для Маркетплейсов (вставьте при сборке)</h6>
         <div class="code-box mb-2" style="font-size:12px">${esc(ozonCode)}</div>
-        <button class="btn btn-outline-primary btn-sm" onclick="copyText('${ozonCode.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"><i class="bi bi-clipboard"></i> Копировать</button>
+        <button class="btn btn-outline-primary btn-sm" onclick="copyText('${ozonCode.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
         ${deadline.urgent ? `<div class="alert alert-danger mt-2 mb-0"><i class="bi bi-exclamation-triangle"></i> ${deadline.hint}</div>` : ''}
         ${deadline.warning ? `<div class="alert alert-warning mt-2 mb-0"><i class="bi bi-exclamation-circle"></i> ${deadline.hint}</div>` : ''}
       </div></div>
@@ -1381,7 +1381,7 @@ async function findUnitByCode() {
         <div class="mt-2">
           <small class="fw-semibold">КМ для Маркетплейсов:</small>
           <div class="code-box mb-1" style="font-size:11px">${esc(ozonCode)}</div>
-          <button class="btn btn-outline-primary btn-sm" onclick="copyText('${ozonCode.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"><i class="bi bi-clipboard"></i> Копировать</button>
+          <button class="btn btn-outline-primary btn-sm" onclick="copyText('${ozonCode.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
         </div>`;
     }
 
@@ -1629,7 +1629,7 @@ async function renderDisposal() {
     return `<tr class="${u.disposal_status === 0 && deadline.urgent ? 'table-danger' : ''}">
       <td class="font-monospace fw-bold">#${u.id}</td>
       <td>${esc(u.sku_name || '')} <span class="text-primary font-monospace">${esc(u.sku_article || '')}</span></td>
-      <td>${u.cz_code ? `<div class="code-box" style="font-size:9px;max-width:200px;cursor:pointer" onclick="copyText('${(normalizeCZ(u.cz_code).replace(/^\xe8/, '')).split('\u001d')[0].replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" title="Нажмите, чтобы скопировать">${esc((normalizeCZ(u.cz_code).replace(/^\xe8/, '')).split('\u001d')[0])}</div>` : '<i class="bi bi-hourglass-split"></i> нет'}</td>
+      <td>${u.cz_code ? `<div class="code-box" style="font-size:9px;max-width:200px;cursor:pointer" onclick="copyText('${(normalizeCZ(u.cz_code).replace(/^\xe8/, '')).split('\u001d')[0].replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')" title="Нажмите, чтобы скопировать">${esc((normalizeCZ(u.cz_code).replace(/^\xe8/, '')).split('\u001d')[0])}</div>` : '<i class="bi bi-hourglass-split"></i> нет'}</td>
       <td>${warehouseBadge(u.warehouse_name)}</td>
       <td>${DISPOSAL_TYPES[u.disposal_type] || '—'}</td>
       <td>${DISPOSAL_REASONS[u.disposal_reason] || u.disposal_reason || '—'}</td>
