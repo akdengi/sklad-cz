@@ -194,8 +194,8 @@ def get_sold_units():
 @units_bp.route("/<int:uid>/return", methods=["POST"])
 def return_unit(uid):
     u = Unit.query.get_or_404(uid)
-    if u.status != 3:
-        abort(400, f"Возврат возможен только из статуса «В обороте». Текущий статус: {STATUSES[u.status]}")
+    if u.status != 5:
+        abort(400, f"Возврат возможен только из статуса «Выбыл». Текущий статус: {STATUSES[u.status]}")
     data = request.json or {}
     warehouse_id = data.get("warehouse_id")
     if not warehouse_id:

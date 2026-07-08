@@ -1550,24 +1550,24 @@ async function renderSold() {
 
 async function openReturnModal(unitId) {
   document.getElementById('return-unit-id').value = unitId;
-  const warehouses = await api('/api/warehouses');
+  const [warehouses, unitResp] = await Promise.all([api('/api/warehouses'), api(`/api/units/${unitId}`)]);
   document.getElementById('return-warehouse').innerHTML = warehouses.map(w => whOption(w)).join('');
+  const u = unitResp.unit;
+  const full = normalizeCZ(u.cz_code || '');
+  const turn = full.split('\u001d')[0].replace(/^\xe8/, '');
+  const czBlock = full ? `
+    <h6>КМ для вывода из оборота</h6>
+    <div class="code-box mb-2">${esc(turn)}</div>
+    <button class="btn btn-outline-secondary btn-sm mb-2" onclick="copyText('${turn.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
+  ` : '<p class="text-warning">Нет кода ЧЗ</p>';
+  document.getElementById('return-cz-code').innerHTML = czBlock;
   new bootstrap.Modal(document.getElementById('return-modal')).show();
 }
-
-function showReturnConfirm() {}
 
 async function processReturn() {
   const unitId = document.getElementById('return-unit-id').value;
   const warehouseId = document.getElementById('return-warehouse').value;
-  try {
-    const r = await api(`/api/units/${unitId}`);
-    if (r.unit.status !== 3) {
-      toast('Сначала подайте отчёт о возврате в ЛК Честный Знак', 'error');
-      return;
-    }
-  } catch (e) { toast('Ошибка проверки статуса', 'error'); return; }
-  if (!confirm('Вернуть товар на склад?')) return;
+  if (!confirm('Вернуть товар в оборот?')) return;
   try {
     const r = await api(`/api/units/${unitId}/return`, { method: 'POST', body: JSON.stringify({ warehouse_id: parseInt(warehouseId) }) });
     bootstrap.Modal.getInstance(document.getElementById('return-modal')).hide();
