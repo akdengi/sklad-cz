@@ -810,6 +810,14 @@ async function czCheckFromEdit() {
   btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Проверить статус ЧЗ';
 }
 
+function extractShortCZ(code) {
+  if (!code) return code;
+  const clean = code.replace(/[\s"']/g, '');
+  const idx = clean.indexOf('91');
+  if (idx > 0) return clean.substring(0, idx);
+  return clean;
+}
+
 function normalizeCZ(code) {
   const FNC1 = "\xe8";
   const GS = "\u001d";
@@ -963,12 +971,7 @@ async function renderQuickSell() {
 let qsAutoSearchTimer = null;
 
 function stripCZCrypto(code) {
-  let c = normalizeCZ(code);
-  const gsIdx = c.indexOf('\u001d');
-  if (gsIdx > 0) return c.substring(0, gsIdx);
-  const idx91 = c.indexOf('91');
-  if (idx91 > 0) return c.substring(0, idx91);
-  return c;
+  return extractShortCZ(code);
 }
 
 async function handleQuickSellInput() {
@@ -1444,7 +1447,7 @@ async function renderStock() {
   if (st !== 'all') params.set('status', st);
   if (document.getElementById('stock-no-cz').checked) params.set('no_cz', '1');
   const q = document.getElementById('stock-search').value;
-  if (q) params.set('q', q);
+  if (q) params.set('q', extractShortCZ(q));
   params.set('sort', stockSort.field);
   params.set('order', stockSort.dir);
   params.set('page', stockPage);
@@ -1501,7 +1504,7 @@ async function renderSold() {
   if (dateTo) params.set('date_to', dateTo);
   params.set('sort', document.getElementById('sold-sort').value);
   const q = document.getElementById('sold-search').value;
-  if (q) params.set('q', q);
+  if (q) params.set('q', extractShortCZ(q));
   params.set('page', soldPage);
   params.set('per_page', PER_PAGE);
 
@@ -1611,7 +1614,7 @@ async function renderDisposal() {
   if (dateTo) params.set('date_to', dateTo);
   params.set('sort', document.getElementById('disposal-sort').value);
   const q = document.getElementById('disposal-search').value;
-  if (q) params.set('q', q);
+  if (q) params.set('q', extractShortCZ(q));
   params.set('page', disposalPage);
   params.set('per_page', PER_PAGE);
 
@@ -1759,7 +1762,7 @@ async function searchSkuByCz() {
   statusEl.className = 'text-muted';
   lblCzSearchTimer = setTimeout(async () => {
     try {
-      const r = await api(`/api/units/find-by-code?code=${encodeURIComponent(code)}`);
+      const r = await api(`/api/units/find-by-code?code=${encodeURIComponent(extractShortCZ(code))}`);
       if (r.found) {
         const u = r.unit;
         document.getElementById('lbl-sku').value = u.sku_id;

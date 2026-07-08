@@ -53,12 +53,7 @@ body { background: #f0f2f5; }
         <li class="nav-item"><a class="nav-link" href="#" data-tab="labels"><i class="bi bi-tag"></i> Этикетки</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-tab="settings"><i class="bi bi-gear"></i> Настройка</a></li>
       </ul>
-      <form class="d-flex me-3" onsubmit="globalSearch(event)" style="max-width:300px">
-        <div class="input-group input-group-sm">
-          <input type="text" class="form-control" id="global-search" placeholder="Поиск по коду ЧЗ...">
-          <button class="btn btn-outline-light" type="submit"><i class="bi bi-search"></i></button>
-        </div>
-      </form>
+
       <button class="btn btn-outline-light btn-sm me-3" onclick="location.reload()" title="Обновить"><i class="bi bi-arrow-clockwise"></i></button>
       <span class="navbar-text text-secondary" style="font-size:12px">v{{ app_version }} · Flask · SQLite</span>
     </div>
