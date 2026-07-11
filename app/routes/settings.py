@@ -502,6 +502,9 @@ def cz_check_single():
             new_status = CZ_TO_UNIT_STATUS.get(cz_status_raw)
             if new_status is not None and new_status > unit.status:
                 unit.status = new_status
+            if (unit.disposal_status == 2
+                    and cz_status_raw in ('RETIRED', 'WITHDRAWN', 'WRITTEN_OFF')):
+                unit.disposal_status = 3
             from app import db
             db.session.commit()
             return jsonify({
@@ -509,6 +512,7 @@ def cz_check_single():
                 "cz_status": cz_status_raw,
                 "cz_check_date": unit.cz_check_date,
                 "unit_status": unit.status,
+                "disposal_status": unit.disposal_status,
             })
         return jsonify({"ok": False, "error": "Код не найден в ЧЗ"})
     except Exception as e:
@@ -570,6 +574,9 @@ def _do_cz_check_all():
                             new_status = CZ_TO_UNIT_STATUS.get(status)
                             if new_status is not None and new_status > unit_by_code[cis].status:
                                 unit_by_code[cis].status = new_status
+                            if (unit_by_code[cis].disposal_status == 2
+                                    and status in ('RETIRED', 'WITHDRAWN', 'WRITTEN_OFF')):
+                                unit_by_code[cis].disposal_status = 3
                     cz_check_status["checked"] = min(i + BATCH, len(all_codes))
                 except Exception:
                     pass

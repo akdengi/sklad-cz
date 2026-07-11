@@ -802,6 +802,9 @@ async function czCheckFromEdit() {
         document.getElementById('unit-status').value = String(r.unit_status);
         document.getElementById('unit-status-select').value = String(r.unit_status);
       }
+      if (r.disposal_status !== undefined) {
+        document.getElementById('unit-disposal-status').value = String(r.disposal_status);
+      }
     } else {
       statusEl.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle"></i> ${r ? (r.error || 'Не найден') : 'Ошибка'}</span>`;
     }
@@ -812,7 +815,7 @@ async function czCheckFromEdit() {
 
 function extractShortCZ(code) {
   if (!code) return code;
-  const clean = code.replace(/[\s"']/g, '');
+  const clean = code.replace(/[\s']/g, '');
   const idx = clean.indexOf('91');
   if (idx > 0) return clean.substring(0, idx);
   return clean;
