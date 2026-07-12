@@ -70,23 +70,43 @@ sudo apt install ghostscript python3-dev gcc
 sudo apt install ghostscript
 ```
 
-### 2. Установить Python-зависимости
+### 2. Создать виртуальное окружение и установить зависимости
 
-```bash
-pip install -r requirements.txt
+**Windows:**
+```
+setup.bat
 ```
 
-Зависимости автоматически подбираются по платформе:
-- Windows: `pywin32` (для COM-интерфейса КриптоПро)
-- Linux: `pycades` (для интеграции с КриптоПро)
+**Linux / Mac:**
+```bash
+chmod +x setup.sh run.sh
+./setup.sh
+```
+
+Скрипт автоматически:
+- Создаёт папку `venv/` с виртуальным окружением
+- Обновляет pip
+- Устанавливает все зависимости из `requirements.txt`
+
+Зависимости подбираются по платформе:
+- Windows: `pywin32` (COM-интерфейс КриптоПро)
+- Linux: `pycades` (интеграция с КриптоПро)
 
 ### 3. Запуск
 
+**Windows:**
+```
+start.bat
+```
+
+**Linux / Mac:**
 ```bash
-python run.py
+./run.sh
 ```
 
 Откроется в браузере: http://127.0.0.1:5000
+
+> При первом запуске `start.bat`/`run.sh` без venv покажет инструкцию по установке.
 
 ## Структура проекта
 
@@ -108,8 +128,14 @@ Sklad/
 ├── static/js/app.js         # Фронтенд (vanilla JS)
 ├── templates/index.html     # Шаблон UI
 ├── instance/                # БД и настройки
+├── venv/                    # Виртуальное окружение (не в git)
 ├── sync.py                  # Скрипт синхронизации с сервером (SSH)
 ├── requirements.txt         # Python-зависимости (кросс-платформенные)
+├── setup.bat                # Создание venv + установка зависимостей (Windows)
+├── setup.sh                 # Создание venv + установка зависимостей (Linux/Mac)
+├── start.bat                # Запуск приложения (Windows)
+├── run.sh                   # Запуск приложения (Linux/Mac)
+├── sklad.service            # Systemd-юнит для Linux
 └── run.py                   # Точка входа
 ```
 
@@ -196,10 +222,21 @@ Sklad/
 
 ### Через командную строку
 
+Синхронизация тоже работает через venv. На Windows перед выполнением нужно активировать окружение:
+
 ```bash
+venv\Scripts\activate
 python sync.py push    # загрузить базу на сервер
 python sync.py pull    # скачать базу с сервера
 python sync.py status  # статус синхронизации
+```
+
+На Linux:
+```bash
+source venv/bin/activate
+python sync.py push
+python sync.py pull
+python sync.py status
 ```
 
 ### Бэкапы

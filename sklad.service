@@ -13,9 +13,8 @@ Group=root
 # Рабочая директория (важно, если в скрипте используются относительные пути)
 WorkingDirectory=/opt/sklad
 
-# Команда запуска.
-# Если используете виртуальное окружение, замените /usr/bin/python3 на /opt/sklad/venv/bin/python
-ExecStart=/usr/bin/python3 /opt/sklad/run.py
+# Команда запуска (venv)
+ExecStart=/opt/sklad/venv/bin/python /opt/sklad/run.py
 
 # Перезапуск при падении
 Restart=always

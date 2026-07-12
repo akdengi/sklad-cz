@@ -19,3 +19,22 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+Third-party dependencies and their licenses:
+
+- paramiko (LGPL-2.1) - SSH library.
+  Source: https://github.com/paramiko/paramiko
+  LGPL-2.1 requires that modifications to the library itself be released under
+  the same license. Using paramiko as an unmodified dependency in an MIT project
+  is permitted; the LGPL applies only to paramiko's own source code.
+
+- pycades (no license declared) - CryptoPro CAdES interface wrapper for Linux.
+  Source: https://github.com/KirillOgleznev/pycades
+  This package wraps proprietary CryptoPro CSP libraries. Its use is subject to
+  CryptoPro's licensing terms. Not distributed with this software.
+
+- CryptoPro CSP / CAdESCOM (proprietary) - Digital signature provider.
+  Required for Chestny Znak API authentication. Must be licensed separately.
+  https://www.cryptopro.ru/products/csp
