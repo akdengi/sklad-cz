@@ -27,6 +27,7 @@
 12. [Вывод из оборота](docs/12-vyvod-iz-oborota.md)
 13. [Возврат товара](docs/13-vozvrat.md)
 14. [Вывод вне продажи](docs/14-vyvod-vne-prodazhi.md)
+15. [API Честный Знак — техническое описание](docs/15-api-chestny-znak.md)
 
 ## Требования
 
