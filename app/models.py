@@ -123,6 +123,7 @@ class Unit(db.Model):
 
     cz_status = db.Column(db.String(100), nullable=True)
     cz_check_date = db.Column(db.String(30), nullable=True)
+    cz_offline_valid = db.Column(db.Boolean, nullable=True)
 
     warehouse = db.relationship("Warehouse", backref="units")
 
@@ -155,5 +156,6 @@ class Unit(db.Model):
             "has_marking": bool(self.sku.has_marking) if self.sku else True,
             "cz_status": self.cz_status or "",
             "cz_check_date": self.cz_check_date or "",
+            "cz_offline_valid": self.cz_offline_valid,
             "updated_at": self.updated_at.isoformat() if self.updated_at else self.created_at.isoformat() if self.created_at else "",
         }

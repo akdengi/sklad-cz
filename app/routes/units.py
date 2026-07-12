@@ -5,9 +5,37 @@ from sqlalchemy import select, or_, exc
 from sqlalchemy.orm import joinedload
 from app import db
 from app.models import Unit, SKU, Warehouse
-from app.utils import normalize_cz, find_duplicate_unit, find_first_unmarked_unit, cz_search_prefix, FNC1, STATUSES
+from app.utils import normalize_cz, find_duplicate_unit, find_first_unmarked_unit, cz_search_prefix, validate_cz_code, cz_to_gs1_parenthesized, FNC1, STATUSES
 
 units_bp = Blueprint("units", __name__)
+
+
+@units_bp.route("/validate-all", methods=["GET"])
+def validate_all_units():
+    """Массовая валидация кодов ЧЗ всех единиц на остатках."""
+    units = Unit.query.options(joinedload(Unit.sku)).filter(
+        or_(Unit.cz_code != None, Unit.cz_code != ''),
+        Unit.status.notin_([4, 5]),
+    ).all()
+    invalid = []
+    for u in units:
+        if u.cz_code:
+            sku_gtin14 = u.sku.gtin14 if u.sku else None
+            validation = validate_cz_code(u.cz_code, sku_gtin14=sku_gtin14)
+            u.cz_offline_valid = validation["valid"]
+            if not validation["valid"]:
+                invalid.append({
+                    "unit_id": u.id,
+                    "sku_name": u.sku.name if u.sku else None,
+                    "cz_code": cz_to_gs1_parenthesized(u.cz_code),
+                    "warnings": validation["warnings"],
+                })
+    db.session.commit()
+    return jsonify({
+        "total": len(units),
+        "invalid_count": len(invalid),
+        "invalid": invalid[:200],
+    })
 
 
 @units_bp.route("/<int:uid>", methods=["GET"])
@@ -71,6 +99,16 @@ def get_units():
     page = int(request.args.get("page", 1))
     per_page = min(int(request.args.get("per_page", 100)), 500)
     units = q.offset((page - 1) * per_page).limit(per_page).all()
+
+    dirty = False
+    for u in units:
+        if u.cz_code and u.cz_offline_valid is None:
+            sku_gtin14 = u.sku.gtin14 if u.sku else None
+            v = validate_cz_code(u.cz_code, sku_gtin14=sku_gtin14)
+            u.cz_offline_valid = v["valid"]
+            dirty = True
+    if dirty:
+        db.session.commit()
 
     return jsonify({
         "units": [u.to_dict() for u in units],
@@ -361,6 +399,11 @@ def scan_unit():
     if existing:
         abort(409, f"Код уже существует в единице #{existing.id}")
 
+    # Валидация кода ЧЗ (с проверкой GTIN карточки)
+    sku = SKU.query.get(sku_id)
+    sku_gtin14 = sku.gtin14 if sku else None
+    validation = validate_cz_code(cz_code, sku_gtin14=sku_gtin14)
+
     unit = find_first_unmarked_unit(sku_id, warehouse_id if warehouse_id else None)
     if not unit:
         if warehouse_id:
@@ -371,6 +414,7 @@ def scan_unit():
                 cz_code=cz_code,
                 status=status,
                 warehouse_id=warehouse_id or 1,
+                cz_offline_valid=validation["valid"],
             )
             db.session.add(unit)
             db.session.commit()
@@ -378,9 +422,11 @@ def scan_unit():
                 "unit_id": unit.id,
                 "sku_name": unit.sku.name if unit.sku else None,
                 "created": True,
+                "validation": validation,
             })
 
     unit.cz_code = cz_code
+    unit.cz_offline_valid = validation["valid"]
     unit.status = status
     unit.updated_at = datetime.utcnow()
     db.session.commit()
@@ -388,6 +434,7 @@ def scan_unit():
         "unit_id": unit.id,
         "sku_name": unit.sku.name if unit.sku else None,
         "created": False,
+        "validation": validation,
     })
 
 
@@ -438,6 +485,7 @@ def quick_sell():
                 cz_code=unit.cz_code,
                 status=3,
                 warehouse_id=target_wh.id,
+                cz_offline_valid=unit.cz_offline_valid,
             )
             db.session.add(target_unit)
             unit.cz_code = None
@@ -600,6 +648,22 @@ def check_duplicate():
     return jsonify({"duplicate": False})
 
 
+@units_bp.route("/validate", methods=["GET"])
+def validate_code():
+    """Валидация кода ЧЗ (структурная + криптохвост + сравнение GTIN)."""
+    cz = (request.args.get("cz") or "").strip()
+    sku_id = request.args.get("sku_id")
+    if not cz:
+        return jsonify({"valid": False, "warnings": ["Код не задан"], "parts": {}})
+    sku_gtin14 = None
+    if sku_id:
+        sku = SKU.query.get(int(sku_id))
+        if sku:
+            sku_gtin14 = sku.gtin14
+    validation = validate_cz_code(cz, sku_gtin14=sku_gtin14)
+    return jsonify(validation)
+
+
 @units_bp.route("", methods=["POST"])
 def create_unit():
     data = request.json or {}
@@ -616,11 +680,13 @@ def create_unit():
             abort(400, f"Достигнут лимит тиража: {sku.total_quantity} единиц")
 
     cz_code = (data.get("cz_code") or "").strip() or None
+    validation = None
     if cz_code:
         cz_code = normalize_cz(cz_code)
         existing = find_duplicate_unit(cz_code)
         if existing:
             abort(409, f"Код ЧЗ уже существует в единице #{existing.id}")
+        validation = validate_cz_code(cz_code, sku_gtin14=sku.gtin14)
     u = Unit(
         sku_id=int(data["sku_id"]),
         cz_code=cz_code,
@@ -638,6 +704,7 @@ def create_unit():
         disposal_fias_id=data.get("disposal_fias_id"),
         disposal_price=data.get("disposal_price"),
         disposal_status=int(data.get("disposal_status") or 0),
+        cz_offline_valid=validation["valid"] if validation else None,
     )
     try:
         db.session.add(u)
@@ -645,7 +712,10 @@ def create_unit():
     except exc.IntegrityError:
         db.session.rollback()
         abort(409, "Код ЧЗ уже существует")
-    return jsonify(u.to_dict()), 201
+    result = u.to_dict()
+    if validation:
+        result["validation"] = validation
+    return jsonify(result), 201
 
 
 @units_bp.route("/<int:uid>", methods=["PUT"])
@@ -654,6 +724,7 @@ def update_unit(uid):
     data = request.json or {}
     u.sku_id = int(data.get("sku_id") or u.sku_id)
     cz_code = data.get("cz_code")
+    validation = None
     if cz_code is not None:
         cz_code = (cz_code.strip() or None)
     if cz_code and cz_code != u.cz_code:
@@ -661,7 +732,12 @@ def update_unit(uid):
         existing = find_duplicate_unit(cz_code, exclude_unit_id=uid)
         if existing:
             abort(409, f"Код ЧЗ уже существует в единице #{existing.id}")
+        sku = SKU.query.get(u.sku_id)
+        sku_gtin14 = sku.gtin14 if sku else None
+        validation = validate_cz_code(cz_code, sku_gtin14=sku_gtin14)
     u.cz_code = cz_code
+    if validation:
+        u.cz_offline_valid = validation["valid"]
     new_status = int(data.get("status") or u.status)
     if new_status == 3 and u.status != 3:
         u.was_returned = False
@@ -688,7 +764,10 @@ def update_unit(uid):
     except exc.IntegrityError:
         db.session.rollback()
         abort(409, "Код ЧЗ уже существует")
-    return jsonify(u.to_dict())
+    result = u.to_dict()
+    if validation:
+        result["validation"] = validation
+    return jsonify(result)
 
 
 @units_bp.route("/<int:uid>", methods=["DELETE"])

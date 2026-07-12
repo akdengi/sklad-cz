@@ -26,6 +26,8 @@ body { background: #f0f2f5; }
 .scan-history-item { padding: 6px 10px; border-bottom: 1px solid #e9ecef; }
 .unit-without-cz { background: #fff3cd !important; }
 .unit-returned > td { background: #f8d7da !important; }
+.unit-validation-failed > td { background: #fce4ec !important; }
+.unit-cz-invalid > td { background: #fff3e0 !important; }
 .progress-marking { width: 120px; }
 #sell-confirm-modal .card { border-width: 2px; }
 #sell-confirm-modal .card-header { font-weight: 600; }
@@ -503,6 +505,7 @@ body { background: #f0f2f5; }
           <button class="btn btn-outline-success btn-sm" onclick="czTestAuth()"><i class="bi bi-key"></i> Проверить авторизацию</button>
           <button class="btn btn-outline-info btn-sm" onclick="czDiagnose()"><i class="bi bi-heart-pulse"></i> Диагностика</button>
           <button class="btn btn-warning btn-sm" id="cz-check-all-btn" onclick="czCheckAll()"><i class="bi bi-arrow-clockwise"></i> Обновить статусы всех товаров</button>
+          <button class="btn btn-outline-warning btn-sm" onclick="offlineValidateAll()"><i class="bi bi-shield-check"></i> Оффлайн-валидация всех кодов</button>
         </div>
         <div class="row g-2 mb-3 mt-2">
           <div class="col-md-8">
@@ -578,6 +581,7 @@ body { background: #f0f2f5; }
       <div class="modal-header"><h5 class="modal-title" id="unit-modal-title">Единица товара</h5><button type="button" class="btn-close" onclick="closeUnitModal()"></button></div>
       <div class="modal-body">
         <div class="alert alert-danger d-none" id="dup-warning"><i class="bi bi-exclamation-triangle"></i> Этот код ЧЗ уже существует!</div>
+        <div id="cz-offline-validation" class="d-none"></div>
         <div class="mb-3"><label class="form-label fw-semibold">SKU</label><select class="form-select" id="unit-sku" onchange="onUnitSkuChange()"></select></div>
         <div id="unit-cz-fields">
         <div class="mb-3"><label class="form-label fw-semibold">Код ЧЗ</label>

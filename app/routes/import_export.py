@@ -9,7 +9,7 @@ from sqlalchemy.orm import joinedload
 
 from app import db
 from app.models import Warehouse, SKU, Unit
-from app.utils import GS, STATUSES, DISPOSAL_TYPES, DISPOSAL_REASONS, DISPOSAL_STATUSES, normalize_cz, find_duplicate_unit, find_first_unmarked_unit
+from app.utils import GS, STATUSES, DISPOSAL_TYPES, DISPOSAL_REASONS, DISPOSAL_STATUSES, normalize_cz, find_duplicate_unit, find_first_unmarked_unit, validate_cz_code, cz_to_gs1_parenthesized
 
 import_export_bp = Blueprint("import_export", __name__)
 
@@ -44,23 +44,36 @@ def import_csv():
     assigned = 0
     duplicates = 0
     errors = 0
+    validation_warnings = []
+    # Получаем GTIN карточки SKU для сравнения
+    sku = SKU.query.get(sku_id)
+    sku_gtin14 = sku.gtin14 if sku else None
     for cz in unique_codes:
         if find_duplicate_unit(cz):
             duplicates += 1
             continue
+        # Валидация кода ЧЗ (с проверкой GTIN карточки)
+        validation = validate_cz_code(cz, sku_gtin14=sku_gtin14)
+        if not validation["valid"]:
+            validation_warnings.append({
+                "code": cz_to_gs1_parenthesized(cz),
+                "warnings": validation["warnings"]
+            })
         unit = find_first_unmarked_unit(sku_id, warehouse_id)
         if not unit:
             unit = find_first_unmarked_unit(sku_id)
         if unit:
             unit.cz_code = cz
             unit.status = status
+            unit.cz_offline_valid = validation["valid"]
             unit.updated_at = datetime.utcnow()
             db.session.flush()
             assigned += 1
         else:
             try:
                 db.session.add(Unit(
-                    sku_id=sku_id, cz_code=cz, status=status, warehouse_id=warehouse_id
+                    sku_id=sku_id, cz_code=cz, status=status, warehouse_id=warehouse_id,
+                    cz_offline_valid=validation["valid"]
                 ))
                 db.session.flush()
                 added += 1
@@ -70,7 +83,15 @@ def import_csv():
         db.session.commit()
     except Exception:
         db.session.rollback()
-    return jsonify({"added": added, "assigned": assigned, "duplicates": duplicates, "errors": errors, "codes": unique_codes[:50]})
+    return jsonify({
+        "added": added,
+        "assigned": assigned,
+        "duplicates": duplicates,
+        "errors": errors,
+        "codes": unique_codes[:50],
+        "validation_warnings": validation_warnings[:50],
+        "total_warnings": len(validation_warnings),
+    })
 
 
 @import_export_bp.route("/import/pdf", methods=["POST"])
@@ -108,9 +129,11 @@ def import_pdf():
         if find_duplicate_unit(cz):
             duplicates += 1
             continue
+        validation = validate_cz_code(cz, sku_gtin14=sku.gtin14 if sku else None)
         try:
             db.session.add(Unit(
-                sku_id=sku_id, cz_code=cz, status=status, warehouse_id=warehouse_id
+                sku_id=sku_id, cz_code=cz, status=status, warehouse_id=warehouse_id,
+                cz_offline_valid=validation["valid"]
             ))
             added += 1
         except Exception:
@@ -222,8 +245,13 @@ def import_json():
             total_quantity=s.get("total_quantity", 0),
         ))
     for u in data["units"]:
+        cz_code = u.get("cz_code")
+        cz_offline_valid = None
+        if cz_code:
+            validation = validate_cz_code(cz_code)
+            cz_offline_valid = validation["valid"]
         db.session.add(Unit(
-            id=u["id"], sku_id=u["sku_id"], cz_code=u.get("cz_code"),
+            id=u["id"], sku_id=u["sku_id"], cz_code=cz_code,
             status=u["status"], warehouse_id=u["warehouse_id"],
             order_number=u.get("order_number"), sold_date=u.get("sold_date"),
             disposal_type=u.get("disposal_type"),
@@ -235,6 +263,7 @@ def import_json():
             disposal_address=u.get("disposal_address"),
             disposal_price=u.get("disposal_price"),
             disposal_status=u.get("disposal_status", 0),
+            cz_offline_valid=cz_offline_valid,
         ))
     db.session.commit()
     return jsonify({"ok": True})

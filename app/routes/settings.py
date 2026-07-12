@@ -491,9 +491,15 @@ def cz_check_single():
             error_code = entry.get("errorCode", "")
             error_msg = entry.get("errorMessage", "")
             if error_code and error_code != "0":
+                from app import db
+                unit.cz_status = None
+                unit.cz_check_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+                db.session.commit()
                 return jsonify({
                     "ok": False,
                     "error": f"{error_msg} (код {error_code})",
+                    "cz_status": None,
+                    "cz_check_date": unit.cz_check_date,
                     "raw_keys": list(entry.keys()),
                 })
             cz_status_raw = info.get("status") or info.get("cisStatus") or ""
@@ -514,7 +520,11 @@ def cz_check_single():
                 "unit_status": unit.status,
                 "disposal_status": unit.disposal_status,
             })
-        return jsonify({"ok": False, "error": "Код не найден в ЧЗ"})
+        from app import db
+        unit.cz_status = None
+        unit.cz_check_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        db.session.commit()
+        return jsonify({"ok": False, "error": "Код не найден в ЧЗ", "cz_status": None, "cz_check_date": unit.cz_check_date})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -558,17 +568,23 @@ def _do_cz_check_all():
             all_codes = list(unit_by_code.keys())
             for i in range(0, len(all_codes), BATCH):
                 batch = all_codes[i:i + BATCH]
+                found_codes = set()
                 try:
                     result = check_cz_status(batch)
                     results = result.get("results", [])
                     for entry in results:
                         error_code = entry.get("errorCode", "")
-                        if error_code and error_code != "0":
-                            continue
                         info = entry.get("cisInfo", entry)
                         cis = info.get("cis", "") or info.get("requestedCis", "")
+                        if error_code and error_code != "0":
+                            if cis and cis in unit_by_code:
+                                found_codes.add(cis)
+                                unit_by_code[cis].cz_status = None
+                                unit_by_code[cis].cz_check_date = now
+                            continue
                         status = info.get("status") or info.get("cisStatus") or ""
-                        if cis and status and cis in unit_by_code:
+                        if cis and cis in unit_by_code:
+                            found_codes.add(cis)
                             unit_by_code[cis].cz_status = status
                             unit_by_code[cis].cz_check_date = now
                             new_status = CZ_TO_UNIT_STATUS.get(status)
@@ -577,6 +593,10 @@ def _do_cz_check_all():
                             if (unit_by_code[cis].disposal_status == 2
                                     and status in ('RETIRED', 'WITHDRAWN', 'WRITTEN_OFF')):
                                 unit_by_code[cis].disposal_status = 3
+                    for code in batch:
+                        if code not in found_codes and code in unit_by_code:
+                            unit_by_code[code].cz_status = None
+                            unit_by_code[code].cz_check_date = now
                     cz_check_status["checked"] = min(i + BATCH, len(all_codes))
                 except Exception:
                     pass

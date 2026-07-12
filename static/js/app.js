@@ -113,6 +113,7 @@ function toast(msg, type = 'info') {
   el.className = 'toast';
   if (type === 'error') el.classList.add('bg-danger', 'text-white');
   else if (type === 'success') el.classList.add('bg-success', 'text-white');
+  else if (type === 'warning') el.classList.add('bg-warning', 'text-dark');
   else el.classList.add('bg-dark', 'text-white');
   new bootstrap.Toast(el, { delay: 2500 }).show();
 }
@@ -615,11 +616,20 @@ async function processScan() {
     const r = await api('/api/units/scan', { method: 'POST', body: JSON.stringify({ cz_code: cz, sku_id: skuId, warehouse_id: warehouseId, status }) });
     scanCount++;
     document.getElementById('scan-counter').textContent = scanCount;
-    resultDiv.innerHTML = `<div class="alert alert-success"><i class="bi bi-check-circle"></i> Код привязан к единице #${r.unit_id} (${esc(r.sku_name)})</div>`;
-    historyDiv.innerHTML = `<div class="scan-history-item text-success">#${scanCount} &rarr; Ед. #${r.unit_id}</div>` + historyDiv.innerHTML;
+    let resultHtml = `<div class="alert alert-success"><i class="bi bi-check-circle"></i> Код привязан к единице #${r.unit_id} (${esc(r.sku_name)})</div>`;
+    if (r.validation && !r.validation.valid) {
+      resultHtml += `<div class="alert alert-warning mt-2"><i class="bi bi-exclamation-triangle"></i> <strong>Оффлайн-валидация:</strong><ul class="mb-0 mt-1">${r.validation.warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul></div>`;
+    }
+    resultDiv.innerHTML = resultHtml;
+    let histClass = (r.validation && !r.validation.valid) ? 'text-warning' : 'text-success';
+    historyDiv.innerHTML = `<div class="scan-history-item ${histClass}">#${scanCount} &rarr; Ед. #${r.unit_id}${(r.validation && !r.validation.valid) ? ' ⚠' : ''}</div>` + historyDiv.innerHTML;
     document.getElementById('scan-cz').value = '';
     document.getElementById('scan-cz').focus();
-    toast(`Отсканировано: ${scanCount}`, 'success');
+    if (r.validation && !r.validation.valid) {
+      toast(`Код привязан, но есть предупреждения оффлайн-валидации`, 'warning');
+    } else {
+      toast(`Отсканировано: ${scanCount}`, 'success');
+    }
   } catch (e) {
     resultDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> ${esc(e.message)}</div>`;
     historyDiv.innerHTML = `<div class="scan-history-item text-danger">#${scanCount + 1} &rarr; Ошибка: ${esc(e.message)}</div>` + historyDiv.innerHTML;
@@ -642,17 +652,24 @@ async function checkDuplicate() {
   const statusEl = document.getElementById('cz-check-status');
   const warnEl = document.getElementById('dup-warning');
   const saveBtn = document.getElementById('unit-save-btn');
+  const offlineEl = document.getElementById('cz-offline-validation');
   if (!cz) {
     statusEl.textContent = '';
     warnEl.classList.add('d-none');
+    if (offlineEl) { offlineEl.innerHTML = ''; offlineEl.classList.add('d-none'); }
     saveBtn.disabled = false;
     return;
   }
+  const skuId = document.getElementById('unit-sku').value;
   clearTimeout(czDuplicateCheckTimer);
   czDuplicateCheckTimer = setTimeout(async () => {
     try {
-      const r = await fetch(`/api/units/check-duplicate?cz=${encodeURIComponent(cz)}${editingUnitId ? `&exclude_id=${editingUnitId}` : ''}`);
-      const data = await r.json();
+      const [dupRes, validRes] = await Promise.all([
+        fetch(`/api/units/check-duplicate?cz=${encodeURIComponent(cz)}${editingUnitId ? `&exclude_id=${editingUnitId}` : ''}`),
+        fetch(`/api/units/validate?cz=${encodeURIComponent(cz)}&sku_id=${skuId || ''}`)
+      ]);
+      const data = await dupRes.json();
+      const validData = await validRes.json();
       if (data.duplicate) {
         statusEl.innerHTML = `<span class="text-danger fw-semibold"><i class="bi bi-exclamation-triangle"></i> Дубликат: ед. #${data.existing_id}</span>`;
         warnEl.classList.remove('d-none');
@@ -661,6 +678,15 @@ async function checkDuplicate() {
         statusEl.innerHTML = `<span class="text-success"><i class="bi bi-check-circle"></i> Код уникален</span>`;
         warnEl.classList.add('d-none');
         saveBtn.disabled = false;
+      }
+      if (offlineEl) {
+        if (!validData.valid && validData.warnings && validData.warnings.length > 0) {
+          offlineEl.classList.remove('d-none');
+          offlineEl.innerHTML = `<div class="alert alert-warning py-1 px-2 mb-0 mt-1"><i class="bi bi-exclamation-triangle"></i> <strong>Оффлайн-валидация:</strong> ${validData.warnings.map(w => esc(w)).join('; ')}</div>`;
+        } else {
+          offlineEl.classList.add('d-none');
+          offlineEl.innerHTML = '';
+        }
       }
     } catch (e) { statusEl.textContent = ''; }
   }, 400);
@@ -807,6 +833,10 @@ async function czCheckFromEdit() {
       }
     } else {
       statusEl.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle"></i> ${r ? (r.error || 'Не найден') : 'Ошибка'}</span>`;
+      if (r && r.cz_status === null) {
+        czDisplay.innerHTML = '<span class="text-muted">КМ не найден в ЧЗ</span>';
+        document.getElementById('unit-cz-status-val').value = '';
+      }
     }
   } catch (e) { statusEl.innerHTML = `<span class="text-danger">${esc(e.message)}</span>`; }
   btn.disabled = false;
@@ -827,6 +857,10 @@ function normalizeCZ(code) {
   code = code.replace(/\\u001d/gi, GS).replace(/\\x1d/gi, GS);
   code = code.replace(/\\u00e8/gi, FNC1).replace(/\\xe8/gi, FNC1);
   code = code.replace(/\u241d/g, GS);
+  // Текстовые литералы → реальные символы
+  code = code.replace(/FNC1/g, FNC1);
+  // Заменяем текстовый "GS" перед AI-кодами на настоящий GS-символ
+  code = code.replace(/GS(?=01|21|91|92)/g, GS);
   if (!code) return code;
   if (code[0] !== FNC1 && code[0] !== GS) code = FNC1 + code;
   else if (code[0] === GS) code = FNC1 + code.slice(1);
@@ -886,9 +920,15 @@ async function saveUnit() {
     disposal_status: parseInt(document.getElementById('unit-disposal-status').value),
   };
   try {
-    if (editingUnitId) await api(`/api/units/${editingUnitId}`, { method: 'PUT', body: JSON.stringify(data) });
-    else await api('/api/units', { method: 'POST', body: JSON.stringify(data) });
-    closeUnitModal(); render(); toast('Сохранено', 'success');
+    let result;
+    if (editingUnitId) result = await api(`/api/units/${editingUnitId}`, { method: 'PUT', body: JSON.stringify(data) });
+    else result = await api('/api/units', { method: 'POST', body: JSON.stringify(data) });
+    if (result.validation && !result.validation.valid) {
+      toast(`Сохранено. Оффлайн-валидация: ${result.validation.warnings.length} предупреждений`, 'warning');
+    } else {
+      toast('Сохранено', 'success');
+    }
+    closeUnitModal(); render();
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -935,7 +975,7 @@ async function showUnitDetail(id) {
     <p><strong>GTIN-14:</strong> <code>${esc(u.gtin14)}</code> &middot; <strong>EAN-13:</strong> ${esc(u.ean13 || '—')}</p>
     ${u.sku_permit_doc ? `<p><strong>Разрешительная документация:</strong> ${esc(u.sku_permit_doc)}</p>` : ''}
     <p><strong>ID:</strong> <span class="font-monospace fw-bold">#${u.id}</span> &middot; <strong>Склад:</strong> ${warehouseBadge(u.warehouse_name)} &middot; <strong>Статус:</strong> ${statusBadge(u.status)}</p>
-    ${u.cz_status ? `<p><strong>Статус в ЧЗ:</strong> ${czStatusBadge(u.cz_status)} <small class="text-muted">(${esc(u.cz_check_date || '—')})</small> ${full ? `<button class="btn btn-outline-info btn-sm ms-2" onclick="czCheckSingle(${u.id}).then(r => { if(r && r.ok) showUnitDetail(${u.id}) })"><i class="bi bi-arrow-clockwise"></i> Обновить</button>` : ''}</p>` : (full ? `<p><strong>Статус в ЧЗ:</strong> <button class="btn btn-outline-info btn-sm" onclick="czCheckSingle(${u.id}).then(r => { if(r && r.ok) showUnitDetail(${u.id}) })"><i class="bi bi-arrow-clockwise"></i> Проверить</button></p>` : '')}
+    ${u.cz_status ? `<p><strong>Статус в ЧЗ:</strong> ${czStatusBadge(u.cz_status)} <small class="text-muted">(${esc(u.cz_check_date || '—')})</small> ${full ? `<button class="btn btn-outline-info btn-sm ms-2" onclick="czCheckSingle(${u.id}).then(() => showUnitDetail(${u.id}))"><i class="bi bi-arrow-clockwise"></i> Обновить</button>` : ''}</p>` : (full ? `<p><strong>Статус в ЧЗ:</strong> <span class="text-muted">КМ не найден в ЧЗ</span> <button class="btn btn-outline-info btn-sm ms-2" onclick="czCheckSingle(${u.id}).then(() => showUnitDetail(${u.id}))"><i class="bi bi-arrow-clockwise"></i> Проверить</button></p>` : '')}
     ${u.order_number ? `<p><strong>Номер заказа:</strong> ${esc(u.order_number)}</p>` : ''}
     ${u.sold_date ? `<p><strong>Дата продажи:</strong> ${fmtDate(u.sold_date)}</p>` : ''}
     ${full ? `
@@ -953,6 +993,16 @@ async function showUnitDetail(id) {
     ${disposalHtml}
   `;
   document.getElementById('unit-detail-content').innerHTML = html;
+  if (full) {
+    try {
+      const vr = await fetch(`/api/units/validate?cz=${encodeURIComponent(u.cz_code)}&sku_id=${u.sku_id || ''}`);
+      const vd = await vr.json();
+      if (!vd.valid && vd.warnings && vd.warnings.length > 0) {
+        const warnHtml = `<div class="alert alert-warning mt-3"><i class="bi bi-exclamation-triangle"></i> <strong>Оффлайн-валидация:</strong><ul class="mb-0 mt-1">${vd.warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul></div>`;
+        document.getElementById('unit-detail-content').insertAdjacentHTML('beforeend', warnHtml);
+      }
+    } catch (e) {}
+  }
   unitDetailModal.show();
 }
 
@@ -1463,13 +1513,23 @@ async function renderStock() {
   const tbody = document.querySelector('#stock-table tbody');
   tbody.innerHTML = units.map(u => {
     const moveOpts = warehouses.filter(w => w.id !== u.warehouse_id).map(w => whOption(w)).join('');
-    return `<tr class="${u.was_returned ? 'unit-returned' : (!u.cz_code ? 'table-warning' : '')}">
+    let rowClass = '';
+    if (u.was_returned) {
+      rowClass = 'unit-returned';
+    } else if (u.cz_code && u.cz_offline_valid === false) {
+      rowClass = 'unit-validation-failed';
+    } else if (u.cz_status && ['BLOCKED', 'UNDEFINED', 'EMPTY'].includes(u.cz_status)) {
+      rowClass = 'unit-cz-invalid';
+    } else if (!u.cz_code) {
+      rowClass = 'table-warning';
+    }
+    return `<tr class="${rowClass}" ${rowClass === 'unit-validation-failed' ? 'title="Оффлайн-валидация не пройдена"' : rowClass === 'unit-cz-invalid' ? 'title="Проблема со статусом в ЧЗ"' : ''}>
       <td class="font-monospace fw-bold">#${u.id}</td>
       <td>${esc(u.sku_name || '')}<br><small class="text-muted"><code>${esc(u.gtin14 || '')}</code></small></td>
       <td><span class="text-primary font-monospace fw-semibold">${esc(u.sku_article || '—')}</span></td>
       <td>${warehouseBadge(u.warehouse_name)}</td>
-      <td>${statusBadge(u.status)}${u.was_returned ? ' <span class="badge bg-danger"><i class="bi bi-arrow-counterclockwise"></i> Возвраты</span>' : ''}</td>
-      <td>${u.cz_code ? `<div class="code-box" style="font-size:10px">${esc(normalizeCZ(u.cz_code).replace(/\xe8/g, '')).replace(/\u001d/g, '<b class="text-danger">␝</b>')}</div>` : '<span class="text-warning"><i class="bi bi-hourglass-split"></i> нет ЧЗ</span>'}</td>
+      <td>${statusBadge(u.status)}${u.was_returned ? ' <span class="badge bg-danger"><i class="bi bi-arrow-counterclockwise"></i> Возвраты</span>' : ''}${u.cz_code && u.cz_offline_valid === false ? ' <span class="badge bg-danger" title="Оффлайн-валидация не пройдена"><i class="bi bi-exclamation-triangle"></i></span>' : ''}${u.cz_status && ['BLOCKED', 'UNDEFINED', 'EMPTY'].includes(u.cz_status) ? ' <span class="badge bg-warning text-dark" title="Проблема со статусом в ЧЗ"><i class="bi bi-exclamation-circle"></i></span>' : ''}</td>
+      <td>${u.cz_code ? `<div class="code-box" style="font-size:10px${u.cz_offline_valid === false ? ';border-color:#e53935;background:#fce4ec' : ''}">${esc(normalizeCZ(u.cz_code).replace(/\xe8/g, '')).replace(/\u001d/g, '<b class="text-danger">␝</b>')}</div>` : '<span class="text-warning"><i class="bi bi-hourglass-split"></i> нет ЧЗ</span>'}</td>
       <td class="text-nowrap">
         <div class="btn-group btn-group-sm">
           <button class="btn btn-outline-primary" onclick="showUnitDetail(${u.id})" title="Подробнее"><i class="bi bi-info-circle"></i></button>
@@ -1678,8 +1738,20 @@ async function importCSV() {
   try {
     const r = await fetch('/api/import/csv', { method: 'POST', body: fd });
     const data = await r.json();
-    showImportLog(`CSV: ${data.added} добавлено | ${data.duplicates} дубликатов | ${data.errors || 0} ошибок`);
-    render(); toast(`+${data.added}`, 'success');
+    let logText = `CSV: ${data.added} добавлено | ${data.assigned || 0} привязано | ${data.duplicates} дубликатов | ${data.errors || 0} ошибок`;
+    if (data.total_warnings > 0) {
+      logText += ` | ${data.total_warnings} предупреждений оффлайн-валидации`;
+    }
+    showImportLog(logText);
+    if (data.validation_warnings && data.validation_warnings.length > 0) {
+      let warnHtml = `<div class="alert alert-warning mt-2"><i class="bi bi-exclamation-triangle"></i> <strong>Оффлайн-валидация — коды с предупреждениями:</strong><ul class="mb-0 mt-1" style="max-height:200px;overflow-y:auto">`;
+      data.validation_warnings.forEach(w => {
+        warnHtml += `<li><code>${esc(w.code)}</code><ul class="mb-0">${w.warnings.map(x => `<li class="text-muted small">${esc(x)}</li>`).join('')}</ul></li>`;
+      });
+      warnHtml += `</ul></div>`;
+      document.getElementById('import-log').insertAdjacentHTML('afterend', warnHtml);
+    }
+    render(); toast(`+${data.added + (data.assigned || 0)}`, 'success');
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -1976,6 +2048,35 @@ async function czTestAuth() {
 }
 
 let czCheckPollTimer = null;
+
+async function offlineValidateAll() {
+  if (!confirm('Запустить оффлайн-валидацию всех кодов ЧЗ на остатках?\n\nПроверит структуру кодов (GTIN, серийный номер, ключ, криптохвост) без обращения к API Честного Знака.')) return;
+  toast('Запуск оффлайн-валидации...', 'info');
+  try {
+    const r = await api('/api/units/validate-all');
+    if (r.invalid_count === 0) {
+      toast(`Все ${r.total} кодов прошли оффлайн-валидацию`, 'success');
+    } else {
+      let msg = `Проверено: ${r.total} кодов. Найдено ${r.invalid_count} с предупреждениями.`;
+      toast(msg, 'warning');
+      let html = `<div class="modal fade" id="offline-validation-modal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-shield-check"></i> Оффлайн-валидация кодов ЧЗ</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+          <p>Проверено: <strong>${r.total}</strong> кодов. С предупреждениями: <strong class="text-warning">${r.invalid_count}</strong></p>
+          <div style="max-height:400px;overflow-y:auto">
+            <table class="table table-sm table-striped">
+              <thead><tr><th>ID</th><th>SKU</th><th>Код ЧЗ</th><th>Предупреждения</th></tr></thead>
+              <tbody>`;
+      r.invalid.forEach(item => {
+        html += `<tr><td>#${item.unit_id}</td><td>${esc(item.sku_name || '')}</td><td><code class="small">${esc(item.cz_code)}</code></td><td class="text-warning small">${item.warnings.map(w => esc(w)).join('<br>')}</td></tr>`;
+      });
+      html += `</tbody></table></div></div></div></div></div>`;
+      document.body.insertAdjacentHTML('beforeend', html);
+      new bootstrap.Modal(document.getElementById('offline-validation-modal')).show();
+      document.getElementById('offline-validation-modal').addEventListener('hidden.bs.modal', function() { this.remove(); });
+    }
+  } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+}
 
 async function czCheckAll() {
   if (!confirm('Обновить статусы всех товаров из Честного Знака?\n\nЭто может занять время при большом количестве кодов.\nДля работы требуется установленный КриптоПро и настроенный отпечаток сертификата.')) return;
