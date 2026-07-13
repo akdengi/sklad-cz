@@ -1500,7 +1500,7 @@ async function renderStock() {
   if (st !== 'all') params.set('status', st);
   if (document.getElementById('stock-no-cz').checked) params.set('no_cz', '1');
   const q = document.getElementById('stock-search').value;
-  if (q) params.set('q', extractShortCZ(q));
+  if (q) params.set('q', q);
   params.set('sort', stockSort.field);
   params.set('order', stockSort.dir);
   params.set('page', stockPage);
@@ -1567,7 +1567,7 @@ async function renderSold() {
   if (dateTo) params.set('date_to', dateTo);
   params.set('sort', document.getElementById('sold-sort').value);
   const q = document.getElementById('sold-search').value;
-  if (q) params.set('q', extractShortCZ(q));
+  if (q) params.set('q', q);
   params.set('page', soldPage);
   params.set('per_page', PER_PAGE);
 
@@ -1677,7 +1677,7 @@ async function renderDisposal() {
   if (dateTo) params.set('date_to', dateTo);
   params.set('sort', document.getElementById('disposal-sort').value);
   const q = document.getElementById('disposal-search').value;
-  if (q) params.set('q', extractShortCZ(q));
+  if (q) params.set('q', q);
   params.set('page', disposalPage);
   params.set('per_page', PER_PAGE);
 
