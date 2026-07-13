@@ -45,7 +45,7 @@ let unitDetailModal = null;
 let cachedWarehouses = [];
 let cachedDefaultAddress = '';
 let cachedDefaultFias = '';
-let qsFoundUnit = null;
+let qsCart = [];
 let stockPage = 1, soldPage = 1, disposalPage = 1;
 const PER_PAGE = 100;
 
@@ -80,9 +80,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('unit-status').value = this.value;
   });
   document.getElementById('qs-target-warehouse').addEventListener('change', function() {
-    qsWarehouseManuallyChanged = true;
-    validateQuickSell();
+    updateSubmitBtn();
   });
+  document.getElementById('qs-order').addEventListener('input', updateSubmitBtn);
   document.getElementById('sold-sku-filter').addEventListener('change', () => { soldPage = 1; renderSold(); });
   document.getElementById('sold-warehouse-filter').addEventListener('change', () => { soldPage = 1; renderSold(); });
   document.getElementById('sold-date-from').addEventListener('change', () => { soldPage = 1; renderSold(); });
@@ -851,6 +851,10 @@ function extractShortCZ(code) {
   return clean;
 }
 
+function stripCZCrypto(code) {
+  return extractShortCZ(code);
+}
+
 function normalizeCZ(code) {
   const FNC1 = "\xe8";
   const GS = "\u001d";
@@ -1011,7 +1015,7 @@ function copyText(t) {
   toast('Скопировано', 'success');
 }
 
-// ============ QUICK SELL ============
+// ============ QUICK SELL (CART) ============
 async function renderQuickSell() {
   const warehouses = await api('/api/warehouses');
   cachedWarehouses = warehouses;
@@ -1019,415 +1023,258 @@ async function renderQuickSell() {
   if (sel) {
     sel.innerHTML = warehouses.map(w => whOption(w)).join('');
   }
-}
-
-let qsAutoSearchTimer = null;
-
-function stripCZCrypto(code) {
-  return extractShortCZ(code);
-}
-
-async function handleQuickSellInput() {
-  const cz = document.getElementById('qs-cz').value.trim();
-  const statusEl = document.getElementById('qs-cz-status');
-  const resultDiv = document.getElementById('qs-find-result');
-  const targetWhSel = document.getElementById('qs-target-warehouse');
-  const whWarnEl = document.getElementById('qs-warehouse-warning');
-  clearTimeout(qsAutoSearchTimer);
-  if (!cz) {
-    qsFoundUnit = null;
-    statusEl.textContent = '';
-    resultDiv.innerHTML = '';
-    qsWarehouseManuallyChanged = false;
-    validateQuickSell();
-    return;
+  const dateEl = document.getElementById('qs-sell-date');
+  if (dateEl && !dateEl.value) {
+    dateEl.value = new Date().toISOString().slice(0, 10);
   }
-  statusEl.textContent = 'Поиск...';
-  statusEl.className = 'text-muted';
-  const searchCode = stripCZCrypto(cz);
-  qsAutoSearchTimer = setTimeout(async () => {
-    try {
-      const warehouses = await api('/api/warehouses');
-      cachedWarehouses = warehouses;
-      const virtuals = warehouses.filter(w => w.wh_type === 'virtual');
+  renderCart();
+  updateSubmitBtn();
+}
 
+function updateSubmitBtn() {
+  const btn = document.getElementById('qs-submit-btn');
+  const order = document.getElementById('qs-order').value.trim();
+  const wh = document.getElementById('qs-target-warehouse').value;
+  const total = qsCart.reduce((s, i) => s + (i.price || 0), 0);
+  if (qsCart.length > 0 && order && wh) {
+    btn.disabled = false;
+    btn.innerHTML = `<i class="bi bi-lightning"></i> Продать всё (${qsCart.length} поз., ${total.toFixed(0)} ₽)`;
+  } else {
+    btn.disabled = true;
+    btn.innerHTML = `<i class="bi bi-lightning"></i> Продать`;
+  }
+}
+
+let _previewTimer = null;
+function previewAddCode() {
+  const code = document.getElementById('qs-add-code').value.trim();
+  const el = document.getElementById('qs-find-result');
+  clearTimeout(_previewTimer);
+  if (!code) { el.innerHTML = ''; return; }
+  _previewTimer = setTimeout(async () => {
+    try {
+      const searchCode = stripCZCrypto(code);
       const data = await api(`/api/units/find-by-code?code=${encodeURIComponent(searchCode)}`);
-      if (data.found) {
-        qsFoundUnit = data.unit;
-        const u = data.unit;
+      if (!data.found) {
+        el.innerHTML = '<div class="alert alert-warning py-2">Товар не найден</div>';
+        return;
+      }
+      const u = data.unit;
+      const isNoMarking = !u.cz_code;
+
+      let czSection = '';
+      if (!isNoMarking) {
         const full = normalizeCZ(u.cz_code || '');
         const ozonCode = full.replace(/\xe8/g, '').replace(/\u001d/g, '\\u001d');
-        const sourceWh = warehouses.find(w => w.id === u.warehouse_id);
-        const isPhysical = sourceWh && sourceWh.wh_type === 'physical';
-
-        statusEl.textContent = `Найден: #${u.id} ${u.sku_name}`;
-        statusEl.className = 'text-success';
-
-        if (isPhysical && virtuals.length > 0) {
-          targetWhSel.innerHTML = virtuals.map(w => whOption(w)).join('');
-          if (!qsWarehouseManuallyChanged) {
-            targetWhSel.value = virtuals[0].id;
-          } else {
-            const prevVal = targetWhSel.value;
-            if (virtuals.find(w => w.id === parseInt(prevVal))) {
-              targetWhSel.value = prevVal;
-            } else {
-              targetWhSel.value = virtuals[0].id;
-            }
-          }
-
-          resultDiv.innerHTML = `
-            <div class="card mb-3 border-warning">
-              <div class="card-body py-2">
-                <div class="d-flex justify-content-between align-items-center">
-                  <div>
-                    <strong>Единица #${u.id}</strong> &middot; ${esc(u.sku_name)} &middot; ${esc(u.sku_article || '—')} &middot; ${warehouseBadge(u.warehouse_name)} &middot; ${statusBadge(u.status)}
-                    ${u.cz_status ? ` &middot; ${czStatusBadge(u.cz_status)}` : ''}
-                    ${u.order_number ? ` &middot; Заказ: ${esc(u.order_number)}` : ''}
-                  </div>
-                </div>
-                <div class="alert alert-info py-2 px-3 mt-2 mb-2">
-                  <i class="bi bi-info-circle"></i> Товар на складе <strong>${esc(u.warehouse_name)}</strong>.
-                  Код маркировки будет перенесён на выбранный маркетплейс перед продажей.
-                  <br><small class="text-muted">Выберите маркетплейс для продажи:</small>
-                </div>
-                <div class="mt-2">
-                  <small class="fw-semibold">КМ для Маркетплейсов:</small>
-                  <div class="code-box mb-1" style="font-size:11px">${esc(ozonCode)}</div>
-                  <button class="btn btn-outline-primary btn-sm" onclick="copyText('${ozonCode.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
-                </div>
-              </div>
-            </div>
-          `;
-        } else if (!isPhysical && virtuals.length > 1) {
-          const otherVirtuals = virtuals.filter(w => w.id !== u.warehouse_id);
-          if (otherVirtuals.length > 0) {
-            targetWhSel.innerHTML = virtuals.map(w => whOption(w, qsWarehouseManuallyChanged ? undefined : u.warehouse_id)).join('');
-            if (!qsWarehouseManuallyChanged) {
-              targetWhSel.value = u.warehouse_id;
-            }
-            resultDiv.innerHTML = `
-              <div class="card mb-3 border-success">
-                <div class="card-body py-2">
-                  <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                      <strong>Единица #${u.id}</strong> &middot; ${esc(u.sku_name)} &middot; ${esc(u.sku_article || '—')} &middot; ${warehouseBadge(u.warehouse_name)} &middot; ${statusBadge(u.status)}
-                      ${u.cz_status ? ` &middot; ${czStatusBadge(u.cz_status)}` : ''}
-                      ${u.order_number ? ` &middot; Заказ: ${esc(u.order_number)}` : ''}
-                    </div>
-                  </div>
-                  <div class="mt-2">
-                    <small class="fw-semibold">КМ для Маркетплейсов:</small>
-                    <div class="code-box mb-1" style="font-size:11px">${esc(ozonCode)}</div>
-                    <button class="btn btn-outline-primary btn-sm" onclick="copyText('${ozonCode.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
-                  </div>
-                </div>
-              </div>
-            `;
-          } else {
-            targetWhSel.innerHTML = warehouses.map(w => whOption(w, u.warehouse_id)).join('');
-            resultDiv.innerHTML = `
-              <div class="card mb-3 border-success">
-                <div class="card-body py-2">
-                  <div>
-                    <strong>Единица #${u.id}</strong> &middot; ${esc(u.sku_name)} &middot; ${esc(u.sku_article || '—')} &middot; ${warehouseBadge(u.warehouse_name)} &middot; ${statusBadge(u.status)}
-                    ${u.cz_status ? ` &middot; ${czStatusBadge(u.cz_status)}` : ''}
-                  </div>
-                </div>
-              </div>
-            `;
-          }
-        } else {
-          targetWhSel.innerHTML = warehouses.map(w => whOption(w)).join('');
-          targetWhSel.value = u.warehouse_id;
-
-          resultDiv.innerHTML = `
-            <div class="card mb-3 border-success">
-              <div class="card-body py-2">
-                <div class="d-flex justify-content-between align-items-center">
-                  <div>
-                    <strong>Единица #${u.id}</strong> &middot; ${esc(u.sku_name)} &middot; ${esc(u.sku_article || '—')} &middot; ${warehouseBadge(u.warehouse_name)} &middot; ${statusBadge(u.status)}
-                    ${u.cz_status ? ` &middot; ${czStatusBadge(u.cz_status)}` : ''}
-                    ${u.order_number ? ` &middot; Заказ: ${esc(u.order_number)}` : ''}
-                  </div>
-                </div>
-                <div class="mt-2">
-                  <small class="fw-semibold">КМ для Маркетплейсов:</small>
-                  <div class="code-box mb-1" style="font-size:11px">${esc(ozonCode)}</div>
-                  <button class="btn btn-outline-primary btn-sm" onclick="copyText('${ozonCode.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
-                </div>
-              </div>
-            </div>
-          `;
-        }
-      } else {
-        qsFoundUnit = null;
-        statusEl.textContent = 'Товар не найден';
-        statusEl.className = 'text-danger';
-        resultDiv.innerHTML = '<div class="alert alert-warning py-2 mb-0"><i class="bi bi-exclamation-triangle"></i> Товар с таким кодом ЧЗ не найден на складе</div>';
+        czSection = `
+          <div class="mt-2">
+            <small class="fw-semibold">КМ для Маркетплейсов:</small>
+            <div class="code-box mb-1" style="font-size:11px">${esc(ozonCode)}</div>
+            <button class="btn btn-outline-primary btn-sm" onclick="copyText('${ozonCode.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
+          </div>`;
       }
-    } catch (e) {
-      qsFoundUnit = null;
-      statusEl.textContent = 'Ошибка поиска';
-      statusEl.className = 'text-danger';
-      resultDiv.innerHTML = `<div class="alert alert-danger py-2 mb-0">${esc(e.message)}</div>`;
-    }
-    validateQuickSell();
-  }, 500);
-}
 
-function validateQuickSell() {
-  const cz = document.getElementById('qs-cz').value.trim();
-  const order = document.getElementById('qs-order').value.trim();
-  const price = document.getElementById('qs-price').value;
-  const targetWh = parseInt(document.getElementById('qs-target-warehouse').value);
-  const btn = document.getElementById('qs-sell-btn');
-  const whWarnEl = document.getElementById('qs-warehouse-warning');
-
-  if (qsFoundUnit && targetWh && qsFoundUnit.warehouse_id !== targetWh) {
-    const targetWhObj = cachedWarehouses.find(w => w.id === targetWh);
-    const isToVirtual = targetWhObj && targetWhObj.wh_type === 'virtual';
-
-    if (!isToVirtual) {
-      const targetName = targetWhObj ? targetWhObj.name : '';
-      whWarnEl.innerHTML = `<i class="bi bi-exclamation-octagon"></i> <strong>Продажа возможна только на виртуальный склад!</strong> Выберите маркетплейс для продажи.`;
-      whWarnEl.classList.remove('d-none');
-      btn.disabled = true;
-      return;
-    }
-  }
-  whWarnEl.classList.add('d-none');
-  const hasInput = cz || document.getElementById('qs-no-marking').value.trim();
-  const valid = qsFoundUnit && hasInput && order && price && parseFloat(price) >= 0;
-  btn.disabled = !valid;
-}
-
-let _noMarkingTimer = null;
-async function handleNoMarkingInput() {
-  const input = document.getElementById('qs-no-marking').value.trim();
-  const statusEl = document.getElementById('qs-no-marking-status');
-  const resultDiv = document.getElementById('qs-find-result');
-  const targetWhSel = document.getElementById('qs-target-warehouse');
-  clearTimeout(_noMarkingTimer);
-  if (!input) {
-    qsFoundUnit = null;
-    statusEl.textContent = '';
-    resultDiv.innerHTML = '';
-    validateQuickSell();
-    return;
-  }
-  statusEl.textContent = 'Поиск...';
-  statusEl.className = 'text-muted';
-  _noMarkingTimer = setTimeout(async () => {
-    try {
-      const warehouses = await api('/api/warehouses');
-      cachedWarehouses = warehouses;
-      const virtuals = warehouses.filter(w => w.wh_type === 'virtual');
-      const allSkus = await api('/api/skus');
-      const q = input.toLowerCase();
-      const foundSku = allSkus.find(s => s.has_marking === false && (
-        (s.article && s.article.toLowerCase() === q) ||
-        (s.ean13 && s.ean13 === input) ||
-        s.name.toLowerCase().includes(q)
-      ));
-      if (!foundSku) {
-        qsFoundUnit = null;
-        statusEl.textContent = 'Товар без маркировки не найден';
-        statusEl.className = 'text-danger';
-        resultDiv.innerHTML = '';
-        validateQuickSell();
-        return;
-      }
-      const existingUnits = await api(`/api/units?sku_id=${foundSku.id}&per_page=500`);
-      const availableUnit = existingUnits.units.find(u => u.status !== 4 && u.status !== 5);
-      if (!availableUnit) {
-        qsFoundUnit = null;
-        statusEl.textContent = `Товар найден (${foundSku.name}), но нет единиц на складе`;
-        statusEl.className = 'text-warning';
-        resultDiv.innerHTML = '';
-        validateQuickSell();
-        return;
-      }
-      qsFoundUnit = availableUnit;
-      qsFoundUnit._is_no_marking = true;
-      const u = availableUnit;
-      statusEl.textContent = `Найден: #${u.id} ${u.sku_name}`;
-      statusEl.className = 'text-info';
-      resultDiv.innerHTML = `
-        <div class="card mb-3 border-info">
+      el.innerHTML = `
+        <div class="card mt-2 border-${isNoMarking ? 'info' : 'success'}">
           <div class="card-body py-2">
-            <strong>Единица #${u.id}</strong> &middot; ${esc(u.sku_name)} &middot; ${esc(u.sku_article || '—')} &middot; ${warehouseBadge(u.warehouse_name)}
-            <div class="alert alert-info py-2 px-3 mt-2 mb-0">
-              <i class="bi bi-info-circle"></i> Товар <strong>без маркировки</strong>. Выбытие в ЧЗ не потребуется.
-            </div>
+            <h6>${isNoMarking ? 'Единица без маркировки' : 'Найдена единица'} #${u.id}</h6>
+            <p class="mb-1"><strong>SKU:</strong> ${esc(u.sku_name)} &middot; <strong>Артикул:</strong> ${esc(u.sku_article || '—')}</p>
+            <p class="mb-1"><strong>Склад:</strong> ${warehouseBadge(u.warehouse_name)} &middot; <strong>Статус:</strong> ${statusBadge(u.status)}</p>
+            ${isNoMarking ? '<div class="alert alert-info py-1 px-2 mt-1 mb-0 small"><i class="bi bi-info-circle"></i> Без маркировки — отчёт о выбытии не потребуется</div>' : ''}
+            ${u.cz_status ? `<p class="mb-1"><strong>Статус в ЧЗ:</strong> ${czStatusBadge(u.cz_status)}</p>` : ''}
+            ${u.order_number ? `<p class="mb-1"><strong>Заказ:</strong> ${esc(u.order_number)}</p>` : ''}
+            ${u.sold_date ? `<p class="mb-1"><strong>Дата продажи:</strong> ${fmtDate(u.sold_date)}</p>` : ''}
+            ${czSection}
           </div>
         </div>
       `;
-      if (virtuals.length > 0) {
-        targetWhSel.innerHTML = virtuals.map(w => whOption(w)).join('');
-      }
-      validateQuickSell();
-    } catch(e) {
-      statusEl.textContent = 'Ошибка поиска';
-      statusEl.className = 'text-danger';
+    } catch (e) {
+      el.innerHTML = `<div class="alert alert-danger">${esc(e.message)}</div>`;
     }
-  }, 300);
+  }, 400);
 }
 
-let qsWarehouseManuallyChanged = false;
+async function addToCart() {
+  const code = document.getElementById('qs-add-code').value.trim();
+  const price = parseFloat(document.getElementById('qs-add-price').value);
+  const statusEl = document.getElementById('qs-add-status');
+  const order = document.getElementById('qs-order').value.trim();
+  const wh = document.getElementById('qs-target-warehouse').value;
 
-async function processQuickSell() {
-  if (document.getElementById('qs-sell-btn').disabled) return;
-  const cz = document.getElementById('qs-cz').value.trim();
+  if (!code) { toast('Введите код товара', 'error'); return; }
+  if (!order) { toast('Введите номер заказа', 'error'); return; }
+  if (!wh) { toast('Выберите склад', 'error'); return; }
+  if (!price || price <= 0) { toast('Укажите цену', 'error'); return; }
+
+  statusEl.innerHTML = '<small class="text-muted"><i class="bi bi-hourglass-split"></i> Поиск...</small>';
+
+  try {
+    const searchCode = stripCZCrypto(code);
+    const data = await api(`/api/units/find-by-code?code=${encodeURIComponent(searchCode)}`);
+    if (!data.found) {
+      statusEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0 small">Товар не найден</div>';
+      return;
+    }
+    const u = data.unit;
+
+    if (u.status === 4 || u.status === 5) {
+      statusEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0 small">Товар уже продан (#${u.id})</div>`;
+      return;
+    }
+    if (u.cz_code && u.status !== 3) {
+      statusEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0 small">Товар в статусе «${statusBadge(u.status)}» — нужен статус «В обороте»</div>`;
+      return;
+    }
+
+    if (qsCart.some(i => i.unit_id === u.id)) {
+      statusEl.innerHTML = `<div class="alert alert-warning py-1 px-2 mb-0 small">Единица #${u.id} уже в списке</div>`;
+      return;
+    }
+
+    const isNoMarking = !u.cz_code;
+
+    qsCart.push({
+      unit_id: u.id,
+      cz_code: u.cz_code || null,
+      sku_name: u.sku_name,
+      sku_article: u.sku_article || '',
+      has_marking: !isNoMarking,
+      price: price,
+      warehouse_name: u.warehouse_name,
+    });
+
+    document.getElementById('qs-add-code').value = '';
+    document.getElementById('qs-add-price').value = '';
+    document.getElementById('qs-find-result').innerHTML = '';
+    statusEl.innerHTML = `<small class="text-success"><i class="bi bi-check-circle"></i> Добавлен: #${u.id} ${esc(u.sku_name)}</small>`;
+    setTimeout(() => { statusEl.innerHTML = ''; }, 2000);
+
+    renderCart();
+    updateSubmitBtn();
+    document.getElementById('qs-add-code').focus();
+  } catch (e) {
+    statusEl.innerHTML = `<div class="alert alert-danger py-1 px-2 mb-0 small">${esc(e.message)}</div>`;
+  }
+}
+
+function removeFromCart(index) {
+  qsCart.splice(index, 1);
+  renderCart();
+  updateSubmitBtn();
+}
+
+function updateCartPrice(index, val) {
+  qsCart[index].price = parseFloat(val) || 0;
+  updateSubmitBtn();
+}
+
+function renderCart() {
+  const el = document.getElementById('qs-cart');
+  if (!el) return;
+  if (qsCart.length === 0) {
+    el.innerHTML = '';
+    return;
+  }
+  const total = qsCart.reduce((s, i) => s + (i.price || 0), 0);
+  let html = `<div class="card border-primary mb-2"><div class="card-body py-2">`;
+  html += `<h6 class="mb-2"><i class="bi bi-cart-check"></i> Позиции в заказе: <strong>${qsCart.length}</strong> &middot; Итого: <strong class="text-success">${total.toFixed(2)} ₽</strong></h6>`;
+  html += `<div class="table-responsive"><table class="table table-sm table-bordered mb-0 align-middle"><thead class="table-light"><tr>`;
+  html += `<th style="width:40px">#</th><th>Товар</th><th style="width:300px">Код ЧЗ / КМ</th><th style="width:130px">Цена</th><th style="width:50px"></th>`;
+  html += `</tr></thead><tbody>`;
+
+  qsCart.forEach((item, i) => {
+    html += `<tr>`;
+    html += `<td class="text-muted">${i + 1}</td>`;
+    html += `<td><strong>${esc(item.sku_name)}</strong>`;
+    if (item.sku_article) html += ` <span class="text-muted">${esc(item.sku_article)}</span>`;
+    html += `</td>`;
+    if (item.has_marking && item.cz_code) {
+      const czNorm = normalizeCZ(item.cz_code);
+      const ozonCode = czNorm.replace(/\xe8/g, '').replace(/\u001d/g, '\\u001d');
+      html += `<td><div class="code-box font-monospace" style="font-size:10px;max-width:280px;cursor:pointer;line-height:1.2" onclick="copyText('${esc(ozonCode).replace(/'/g, "\\'")}')">${esc(ozonCode)} <i class="bi bi-clipboard text-primary ms-1" title="Нажмите, чтобы скопировать КМ для маркетплейса"></i></div></td>`;
+    } else {
+      html += `<td><span class="text-muted fst-italic">нет ЧЗ</span></td>`;
+    }
+    html += `<td><input type="number" class="form-control form-control-sm" step="0.01" min="0" value="${item.price}" onchange="updateCartPrice(${i}, this.value)" style="width:110px"></td>`;
+    html += `<td><button class="btn btn-outline-danger btn-sm" onclick="removeFromCart(${i})" title="Удалить"><i class="bi bi-x-lg"></i></button></td>`;
+    html += `</tr>`;
+  });
+
+  html += `</tbody></table></div></div></div>`;
+  el.innerHTML = html;
+}
+
+async function submitCart() {
+  if (qsCart.length === 0) return;
+  const btn = document.getElementById('qs-submit-btn');
   const targetWh = parseInt(document.getElementById('qs-target-warehouse').value);
   const orderNumber = document.getElementById('qs-order').value.trim();
-  const price = document.getElementById('qs-price').value;
+  const sellDate = document.getElementById('qs-sell-date').value;
   const resultDiv = document.getElementById('qs-result');
 
-  const u = qsFoundUnit;
-  const sourceWh = cachedWarehouses.find(w => w.id === u.warehouse_id);
-  const targetWhObj = cachedWarehouses.find(w => w.id === targetWh);
-  const willTransfer = targetWhObj && targetWhObj.wh_type === 'virtual' && u.warehouse_id !== targetWh;
+  if (!orderNumber) { toast('Введите номер заказа', 'error'); return; }
+  if (!targetWh) { toast('Выберите склад', 'error'); return; }
 
-  let html = `<div class="row g-3">`;
-  html += `<div class="col-md-6"><div class="card border-primary"><div class="card-body">`;
-  html += `<h6 class="text-primary"><i class="bi bi-info-circle"></i> Товар</h6>`;
-  html += `<table class="table table-sm mb-0"><tbody>`;
-  html += `<tr><td class="fw-semibold">Единица</td><td><span class="font-monospace fw-bold">#${u.id}</span></td></tr>`;
-  html += `<tr><td class="fw-semibold">SKU</td><td>${esc(u.sku_name)}</td></tr>`;
-  html += `<tr><td class="fw-semibold">Артикул</td><td>${esc(u.sku_article || '—')}</td></tr>`;
-  html += `<tr><td class="fw-semibold">Код ЧЗ</td><td><small class="font-monospace">${esc((normalizeCZ(u.cz_code || '').replace(/^\xe8/, '')).substring(0, 40))}${normalizeCZ(u.cz_code || '').length > 40 ? '...' : ''}</small></td></tr>`;
-  if (u.cz_status) html += `<tr><td class="fw-semibold">Статус ЧЗ</td><td>${czStatusBadge(u.cz_status)}</td></tr>`;
-  html += `</tbody></table></div></div></div>`;
-
-  html += `<div class="col-md-6"><div class="card border-warning"><div class="card-body">`;
-  html += `<h6 class="text-warning"><i class="bi bi-truck"></i> Склад и продажа</h6>`;
-  html += `<table class="table table-sm mb-0"><tbody>`;
-  html += `<tr><td class="fw-semibold">Текущий склад</td><td>${warehouseBadge(u.warehouse_name)}</td></tr>`;
-  html += `<tr><td class="fw-semibold">Склад продажи</td><td>${warehouseBadge(targetWhObj ? targetWhObj.name : u.warehouse_name)}</td></tr>`;
-  if (willTransfer) {
-    html += `<tr><td class="fw-semibold">Остаток на маркетплейсе</td><td><span id="qs-confirm-virtual-count">...</span></td></tr>`;
-  }
-  html += `<tr><td class="fw-semibold">Номер заказа</td><td><strong>${esc(orderNumber)}</strong></td></tr>`;
-  html += `<tr><td class="fw-semibold">Цена</td><td><strong class="text-success">${parseFloat(price).toFixed(2)} ₽</strong></td></tr>`;
-  html += `</tbody></table></div></div></div>`;
-  html += `</div>`;
-
-  if (willTransfer) {
-    const skuId = u.sku_id;
-    api(`/api/units?sku_id=${skuId}&warehouse_id=${targetWh}`).then(d => {
-      const countEl = document.getElementById('qs-confirm-virtual-count');
-      if (countEl) {
-        const cnt = d.total || 0;
-        countEl.innerHTML = `<strong>${cnt}</strong> ед.`;
-        if (cnt > 0) {
-          countEl.innerHTML += ` <span class="badge bg-warning text-dark">−1 удалится перед продажей</span>`;
-        } else {
-          countEl.innerHTML += ` <span class="badge bg-info">пусто — товар будет создан</span>`;
-        }
-      }
-    });
-    html += `<div class="alert alert-info mt-3 mb-0"><i class="bi bi-arrow-left-right"></i> Код маркировки будет перенесён со склада «${esc(u.warehouse_name)}» на «${esc(targetWhObj.name)}».</div>`;
-  }
-
-  document.getElementById('sell-confirm-body').innerHTML = html;
-  new bootstrap.Modal(document.getElementById('sell-confirm-modal')).show();
-}
-
-function closeSellConfirmModal() {
-  const modal = bootstrap.Modal.getInstance(document.getElementById('sell-confirm-modal'));
-  if (modal) modal.hide();
-}
-
-async function confirmQuickSell() {
-  const btn = document.getElementById('sell-confirm-btn');
   btn.disabled = true;
   btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Обработка...';
 
-  const cz = document.getElementById('qs-cz').value.trim();
-  const targetWh = parseInt(document.getElementById('qs-target-warehouse').value);
-  const orderNumber = document.getElementById('qs-order').value.trim();
-  const price = document.getElementById('qs-price').value;
-  const resultDiv = document.getElementById('qs-result');
-
-  try {
-    let r;
-    // Товар без маркировки — другой endpoint
-    if (qsFoundUnit && qsFoundUnit._is_no_marking) {
-      const payload = { sku_id: qsFoundUnit.sku_id };
-      if (targetWh) payload.target_warehouse_id = targetWh;
-      if (orderNumber) payload.order_number = orderNumber;
-      if (price) payload.disposal_price = parseFloat(price);
-      r = await api('/api/units/sell-no-marking', { method: 'POST', body: JSON.stringify(payload) });
-    } else {
-      const payload = { cz_code: cz };
-      if (targetWh) payload.target_warehouse_id = targetWh;
-      if (orderNumber) payload.order_number = orderNumber;
-      if (price) payload.disposal_price = parseFloat(price);
-      r = await api('/api/units/quick-sell', { method: 'POST', body: JSON.stringify(payload) });
+  let success = 0, errors = [];
+  for (let i = 0; i < qsCart.length; i++) {
+    const item = qsCart[i];
+    try {
+      if (item.has_marking) {
+        const payload = { cz_code: item.cz_code };
+        if (targetWh) payload.target_warehouse_id = targetWh;
+        if (orderNumber) payload.order_number = orderNumber;
+        if (item.price) payload.disposal_price = item.price;
+        if (sellDate) payload.sold_date = sellDate;
+        await api('/api/units/quick-sell', { method: 'POST', body: JSON.stringify(payload) });
+      } else {
+        const payload = {};
+        const uData = await api(`/api/units/${item.unit_id}`);
+        payload.sku_id = uData.unit ? uData.unit.sku_id : undefined;
+        if (targetWh) payload.target_warehouse_id = targetWh;
+        if (orderNumber) payload.order_number = orderNumber;
+        if (item.price) payload.disposal_price = item.price;
+        if (sellDate) payload.sold_date = sellDate;
+        await api('/api/units/sell-no-marking', { method: 'POST', body: JSON.stringify(payload) });
+      }
+      success++;
+    } catch (e) {
+      errors.push(`#${item.unit_id} ${item.sku_name}: ${e.message}`);
     }
-    const u = r.unit;
-    const full = normalizeCZ(u.cz_code || '');
-    const ozonCode = full.replace(/\xe8/g, '').replace(/\u001d/g, '\\u001d');
-    const deadline = getDeadlineInfo(u.sold_date, u.has_marking);
-
-    closeSellConfirmModal();
-
-    resultDiv.innerHTML = `
-      <div class="alert alert-success">
-        <i class="bi bi-check-circle"></i> <strong>${esc(r.message)}</strong><br>
-        Единица #${u.id} &middot; ${esc(u.sku_name || '')} &middot; ${warehouseBadge(u.warehouse_name)}
-        ${r.transferred ? '<br><span class="badge bg-info mt-1"><i class="bi bi-arrow-left-right"></i> Код автоматически перенесён с физического склада на виртуальный</span>' : ''}
-      </div>
-      <div class="card mt-2"><div class="card-body">
-        <h6><i class="bi bi-upc-scan"></i> КМ для Маркетплейсов (вставьте при сборке)</h6>
-        <div class="code-box mb-2" style="font-size:12px">${esc(ozonCode)}</div>
-        <button class="btn btn-outline-primary btn-sm" onclick="copyText('${ozonCode.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
-        ${deadline.urgent ? `<div class="alert alert-danger mt-2 mb-0"><i class="bi bi-exclamation-triangle"></i> ${deadline.hint}</div>` : ''}
-        ${deadline.warning ? `<div class="alert alert-warning mt-2 mb-0"><i class="bi bi-exclamation-circle"></i> ${deadline.hint}</div>` : ''}
-      </div></div>
-    `;
-    document.getElementById('qs-cz').value = '';
-    document.getElementById('qs-order').value = '';
-    document.getElementById('qs-price').value = '';
-    document.getElementById('qs-cz-status').textContent = '';
-    document.getElementById('qs-find-result').innerHTML = '';
-    qsFoundUnit = null;
-    qsWarehouseManuallyChanged = false;
-    validateQuickSell();
-    toast('Продажа оформлена', 'success');
-    render();
-  } catch (e) {
-    resultDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> ${esc(e.message)}</div>`;
-    toast(e.message, 'error');
   }
 
+  if (success > 0) {
+    toast(`Продано ${success} из ${qsCart.length} позиций`, errors.length === 0 ? 'success' : 'warning');
+    resultDiv.innerHTML = `<div class="alert ${errors.length === 0 ? 'alert-success' : 'alert-warning'}">
+      <i class="bi bi-check-circle"></i> Продано <strong>${success}</strong> из ${qsCart.length} позиций
+      ${errors.length > 0 ? '<br>' + errors.map(e => `<small class="text-danger">${esc(e)}</small>`).join('<br>') : ''}
+    </div>`;
+  } else {
+    resultDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка продажи:<br>${errors.map(e => `<small>${esc(e)}</small>`).join('<br>')}</div>`;
+  }
+
+  qsCart = [];
+  renderCart();
+  updateSubmitBtn();
   btn.disabled = false;
   btn.innerHTML = '<i class="bi bi-lightning"></i> Продать';
+  render();
 }
 
-async function findUnitByCode() {
+function findUnitByCode() {
   const code = document.getElementById('qs-find-code').value.trim();
   if (!code) { toast('Введите код', 'error'); return; }
   const resultDiv = document.getElementById('qs-find-result');
-  const statusEl = document.getElementById('qs-cz-status');
   const searchCode = stripCZCrypto(code);
-  try {
-    const data = await api(`/api/units/find-by-code?code=${encodeURIComponent(searchCode)}`);
+  api(`/api/units/find-by-code?code=${encodeURIComponent(searchCode)}`).then(data => {
     if (!data.found) {
-      qsFoundUnit = null;
       resultDiv.innerHTML = '<div class="alert alert-warning py-2">Товар не найден</div>';
-      statusEl.textContent = '';
-      validateQuickSell();
       return;
     }
     const u = data.unit;
     const isNoMarking = !u.cz_code;
-    qsFoundUnit = u;
-    if (isNoMarking) qsFoundUnit._is_no_marking = true;
-    document.getElementById('qs-cz').value = u.cz_code || u.ean13 || u.sku_article || '';
-    statusEl.textContent = isNoMarking ? `Найден (без ЧЗ): #${u.id} ${u.sku_name}` : `Найден: #${u.id} ${u.sku_name}`;
-    statusEl.className = isNoMarking ? 'text-info' : 'text-success';
 
     let czSection = '';
     if (!isNoMarking) {
@@ -1459,10 +1306,9 @@ async function findUnitByCode() {
         </div>
       </div>
     `;
-    validateQuickSell();
-  } catch (e) {
+  }).catch(e => {
     resultDiv.innerHTML = `<div class="alert alert-danger">${esc(e.message)}</div>`;
-  }
+  });
 }
 
 // ============ SORTING ============

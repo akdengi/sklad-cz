@@ -29,8 +29,6 @@ body { background: #f0f2f5; }
 .unit-validation-failed > td { background: #fce4ec !important; }
 .unit-cz-invalid > td { background: #fff3e0 !important; }
 .progress-marking { width: 120px; }
-#sell-confirm-modal .card { border-width: 2px; }
-#sell-confirm-modal .card-header { font-weight: 600; }
 </style>
 </head>
 <body>
@@ -86,41 +84,50 @@ body { background: #f0f2f5; }
   <div class="card mb-3"><div class="card-body">
     <h5 class="card-title mb-3"><i class="bi bi-lightning"></i> Быстрая продажа</h5>
     <div class="row g-3 mb-3">
-      <div class="col-md-6">
-        <label class="form-label fw-semibold">Код маркировки ЧЗ</label>
-        <textarea class="form-control font-monospace" id="qs-cz" rows="3" placeholder="Отсканируйте или вставьте код ЧЗ..." oninput="handleQuickSellInput()"></textarea>
-        <small class="text-muted" id="qs-cz-status"></small>
-        <small class="text-muted">Для товаров <strong>с маркировкой</strong>. Требуется отчёт о выбытии в ЧЗ.</small>
+      <div class="col-md-4">
+        <label class="form-label fw-semibold">Номер заказа *</label>
+        <input type="text" class="form-control" id="qs-order" placeholder="№ заказа">
       </div>
-      <div class="col-md-6">
-        <label class="form-label fw-semibold">Артикул / EAN-13 (без ЧЗ)</label>
-        <input type="text" class="form-control" id="qs-no-marking" placeholder="Артикул или EAN-13 товара без маркировки..." oninput="handleNoMarkingInput()">
-        <small class="text-muted" id="qs-no-marking-status"></small>
-        <small class="text-muted">Для товаров <strong>без маркировки</strong>. Отчёт о выбытии не потребуется.</small>
-      </div>
-    </div>
-    <div class="row g-3 mb-3">
-      <div class="col-md-6">
-        <label class="form-label fw-semibold">Целевой склад (откуда списать)</label>
+      <div class="col-md-4">
+        <label class="form-label fw-semibold">Склад списания *</label>
         <select class="form-select" id="qs-target-warehouse"></select>
-        <small class="text-muted">Виртуальный склад маркетплейса для продажи</small>
-        <div class="alert alert-danger py-1 px-2 mt-1 mb-0 small d-none" id="qs-warehouse-warning"></div>
+        <small class="text-muted">Виртуальный склад маркетплейса</small>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label fw-semibold">Дата продажи</label>
+        <input type="date" class="form-control" id="qs-sell-date">
+      </div>
+      <div class="col-md-2 d-flex align-items-end">
+        <button class="btn btn-success btn-lg w-100" id="qs-submit-btn" onclick="submitCart()" disabled>
+          <i class="bi bi-lightning"></i> Продать
+        </button>
       </div>
     </div>
-    <div id="qs-find-result"></div>
-    <div class="row g-3 mb-3">
-      <div class="col-md-4"><label class="form-label fw-semibold">Номер заказа *</label><input type="text" class="form-control" id="qs-order" placeholder="№ заказа" oninput="validateQuickSell()"></div>
-      <div class="col-md-4"><label class="form-label fw-semibold">Цена (руб) *</label><input type="number" class="form-control" id="qs-price" step="0.01" min="0" placeholder="0.00" oninput="validateQuickSell()"></div>
-      <div class="col-md-4 d-flex align-items-end"><button class="btn btn-success btn-lg w-100" id="qs-sell-btn" onclick="processQuickSell()" disabled><i class="bi bi-lightning"></i> Продать</button></div>
+    <div class="row g-2 mb-3 align-items-end">
+      <div class="col-md-6">
+        <label class="form-label fw-semibold">Код ЧЗ / Артикул / EAN-13</label>
+        <input type="text" class="form-control font-monospace" id="qs-add-code" placeholder="Отсканируйте или введите код..." oninput="previewAddCode()" onkeydown="if(event.key==='Enter'){event.preventDefault();addToCart()}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Цена (руб) *</label>
+        <input type="number" class="form-control" id="qs-add-price" step="0.01" min="0" placeholder="0.00" onkeydown="if(event.key==='Enter'){event.preventDefault();addToCart()}">
+      </div>
+      <div class="col-md-3">
+        <button class="btn btn-primary w-100" onclick="addToCart()"><i class="bi bi-plus-lg"></i> Добавить</button>
+      </div>
     </div>
+    <div id="qs-add-status" class="mb-2"></div>
+    <div id="qs-cart"></div>
     <div id="qs-result"></div>
   </div></div>
   <div class="card"><div class="card-body">
     <h5 class="card-title mb-3"><i class="bi bi-search"></i> Поиск товара</h5>
     <div class="row g-2 mb-3">
-      <div class="col-md-8"><input type="text" class="form-control" id="qs-find-code" placeholder="Код ЧЗ / EAN-13 / артикул для поиска..."></div>
-      <div class="col-md-4"><button class="btn btn-primary w-100" onclick="findUnitByCode()"><i class="bi bi-search"></i> Найти товар</button></div>
+      <div class="col-md-7"><input type="text" class="form-control" id="qs-find-code" placeholder="Код ЧЗ / EAN-13 / артикул для поиска..."></div>
+      <div class="col-md-3"><button class="btn btn-primary w-100" onclick="findUnitByCode()"><i class="bi bi-search"></i> Найти</button></div>
+      <div class="col-md-2"><button class="btn btn-outline-secondary w-100" onclick="document.getElementById('qs-find-code').value='';document.getElementById('qs-find-result').innerHTML=''"><i class="bi bi-x-lg"></i> Очистить</button></div>
     </div>
+    <div id="qs-find-result"></div>
   </div></div>
 </div>
 
@@ -731,23 +738,6 @@ body { background: #f0f2f5; }
   </div>
 </div>
 
-<!-- ===== SELL CONFIRM MODAL ===== -->
-<div class="modal fade" id="sell-confirm-modal" tabindex="-1">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <div class="modal-header bg-primary text-white">
-        <h5 class="modal-title"><i class="bi bi-lightning"></i> Подтверждение продажи</h5>
-        <button type="button" class="btn-close btn-close-white" onclick="closeSellConfirmModal()"></button>
-      </div>
-      <div class="modal-body" id="sell-confirm-body">
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary btn-lg" onclick="closeSellConfirmModal()"><i class="bi bi-x-lg"></i> Отменить</button>
-        <button type="button" class="btn btn-success btn-lg" id="sell-confirm-btn" onclick="confirmQuickSell()"><i class="bi bi-lightning"></i> Продать</button>
-      </div>
-    </div>
-  </div>
-</div>
 
 <!-- Toast -->
 <div class="toast-container position-fixed bottom-0 end-0 p-3">

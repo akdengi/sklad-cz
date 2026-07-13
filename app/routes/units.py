@@ -495,7 +495,7 @@ def quick_sell():
             unit = target_unit
 
     unit.status = 4
-    unit.sold_date = datetime.utcnow().strftime("%Y-%m-%d")
+    unit.sold_date = (data.get("sold_date") or "").strip() or datetime.utcnow().strftime("%Y-%m-%d")
     if order_number:
         unit.order_number = order_number
 
@@ -592,7 +592,7 @@ def sell_no_marking():
             unit = target_unit
 
     unit.status = 4
-    unit.sold_date = datetime.utcnow().strftime("%Y-%m-%d")
+    unit.sold_date = (data.get("sold_date") or "").strip() or datetime.utcnow().strftime("%Y-%m-%d")
     unit.order_number = order_number
     if disposal_price:
         unit.disposal_price = float(disposal_price)
