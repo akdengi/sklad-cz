@@ -48,6 +48,68 @@ let cachedDefaultFias = '';
 let qsCart = [];
 let stockPage = 1, soldPage = 1, disposalPage = 1;
 const PER_PAGE = 100;
+const selectedUnits = { stock: new Set(), sold: new Set(), disposal: new Set() };
+
+function toggleSelectAll(tab, checked) {
+  const prefix = tab;
+  document.querySelectorAll(`#${prefix}-table tbody input[type="checkbox"]`).forEach(cb => {
+    cb.checked = checked;
+    const id = parseInt(cb.dataset.id);
+    if (checked) selectedUnits[tab].add(id); else selectedUnits[tab].delete(id);
+  });
+  updateToolbar(tab);
+}
+
+function toggleRow(tab, id, checked) {
+  if (checked) selectedUnits[tab].add(id); else selectedUnits[tab].delete(id);
+  const all = document.querySelectorAll(`#${tab}-table tbody input[type="checkbox"]`);
+  const selectAll = document.getElementById(`${tab}-select-all`);
+  selectAll.checked = all.length > 0 && [...all].every(cb => cb.checked);
+  selectAll.indeterminate = !selectAll.checked && [...all].some(cb => cb.checked);
+  updateToolbar(tab);
+}
+
+function updateToolbar(tab) {
+  const count = selectedUnits[tab].size;
+  const toolbar = document.getElementById(`${tab}-toolbar`);
+  const countEl = document.getElementById(`${tab}-selected-count`);
+  if (count > 0) {
+    toolbar.classList.remove('d-none');
+    countEl.textContent = count;
+  } else {
+    toolbar.classList.add('d-none');
+  }
+}
+
+function clearSelection(tab) {
+  selectedUnits[tab].clear();
+  document.querySelectorAll(`#${tab}-table tbody input[type="checkbox"]`).forEach(cb => cb.checked = false);
+  document.getElementById(`${tab}-select-all`).checked = false;
+  document.getElementById(`${tab}-select-all`).indeterminate = false;
+  updateToolbar(tab);
+}
+
+async function batchCzCheck(tab) {
+  const ids = [...selectedUnits[tab]];
+  if (ids.length === 0) return;
+  if (!confirm(`Проверить статус ЧЗ для ${ids.length} единиц?`)) return;
+
+  const toastId = toast(`Проверка ${ids.length} кодов...`, 'info', 0);
+  let ok = 0, fail = 0;
+
+  for (const id of ids) {
+    try {
+      const r = await api('/api/cz/check-single', { method: 'POST', body: JSON.stringify({ unit_id: id }) });
+      if (r && r.ok) ok++; else fail++;
+    } catch (e) { fail++; }
+  }
+
+  toast(`Проверено: ${ok} успешно, ${fail} ошибок`, ok > 0 ? 'success' : 'error');
+  if (tab === 'stock') renderStock();
+  else if (tab === 'sold') renderSold();
+  else if (tab === 'disposal') renderDisposal();
+  clearSelection(tab);
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   unitDetailModal = new bootstrap.Modal(document.getElementById('unit-detail-modal'));
@@ -1375,6 +1437,7 @@ async function renderStock() {
       rowClass = 'table-warning';
     }
     return `<tr class="${rowClass}" ${rowClass === 'unit-validation-failed' ? 'title="Оффлайн-валидация не пройдена"' : rowClass === 'unit-cz-invalid' ? 'title="Проблема со статусом в ЧЗ"' : ''}>
+      <td><input type="checkbox" class="form-check-input" data-id="${u.id}" onchange="toggleRow('stock',${u.id},this.checked)" ${selectedUnits.stock.has(u.id) ? 'checked' : ''}></td>
       <td class="font-monospace fw-bold">#${u.id}</td>
       <td>${esc(u.sku_name || '')}<br><small class="text-muted"><code>${esc(u.gtin14 || '')}</code></small></td>
       <td><span class="text-primary font-monospace fw-semibold">${esc(u.sku_article || '—')}</span></td>
@@ -1394,7 +1457,7 @@ async function renderStock() {
         </div>
       </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="8" class="text-center text-muted">Нет единиц</td></tr>';
+  }).join('') || '<tr><td colspan="9" class="text-center text-muted">Нет единиц</td></tr>';
 
   renderPagination('stock', stockPage, totalPages, total, 'stockPage');
 }
@@ -1439,6 +1502,7 @@ async function renderSold() {
     }
     return `
     <tr class="${u.has_marking && u.disposal_status === 0 && deadline.urgent ? 'table-danger' : ''}">
+      <td><input type="checkbox" class="form-check-input" data-id="${u.id}" onchange="toggleRow('sold',${u.id},this.checked)" ${selectedUnits.sold.has(u.id) ? 'checked' : ''}></td>
       <td class="font-monospace fw-bold">#${u.id}</td>
       <td>${esc(u.sku_name || '')}</td>
       <td><span class="text-primary font-monospace">${esc(u.sku_article || '—')}</span></td>
@@ -1458,7 +1522,7 @@ async function renderSold() {
         <button class="btn btn-outline-danger btn-sm" onclick="openDeleteSaleModal(${u.id})" title="Удалить продажу"><i class="bi bi-trash"></i></button>
       </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="12" class="text-center text-muted">Нет проданных товаров</td></tr>';
+  }).join('') || '<tr><td colspan="13" class="text-center text-muted">Нет проданных товаров</td></tr>';
 
   renderPagination('sold', soldPage, totalPages, data.count, 'soldPage');
 }
@@ -1545,6 +1609,7 @@ async function renderDisposal() {
       else if (deadline.warning) deadlineBadge = `<span class="badge bg-warning text-dark ms-1"><i class="bi bi-clock"></i> Сгорает!</span>`;
     }
     return `<tr class="${u.disposal_status === 0 && deadline.urgent ? 'table-danger' : ''}">
+      <td><input type="checkbox" class="form-check-input" data-id="${u.id}" onchange="toggleRow('disposal',${u.id},this.checked)" ${selectedUnits.disposal.has(u.id) ? 'checked' : ''}></td>
       <td class="font-monospace fw-bold">#${u.id}</td>
       <td>${esc(u.sku_name || '')} <span class="text-primary font-monospace">${esc(u.sku_article || '')}</span></td>
       <td>${u.cz_code ? `<div class="code-box" style="font-size:9px;max-width:200px;cursor:pointer" onclick="copyText('${(normalizeCZ(u.cz_code).replace(/^\xe8/, '')).split('\u001d')[0].replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')" title="Нажмите, чтобы скопировать">${esc((normalizeCZ(u.cz_code).replace(/^\xe8/, '')).split('\u001d')[0])}</div>` : '<i class="bi bi-hourglass-split"></i> нет'}</td>
@@ -1562,7 +1627,7 @@ async function renderDisposal() {
         ${[4,5].includes(u.status) && u.disposal_status === 1 && ['RETIRED','WITHDRAWN','WRITTEN_OFF'].includes(u.cz_status) ? `<button class="btn btn-outline-warning btn-sm" onclick="openReturnModal(${u.id})" title="Вернуть в оборот"><i class="bi bi-arrow-counterclockwise"></i></button>` : ''}
       </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="12" class="text-center text-muted">Нет единиц для вывода из оборота</td></tr>';
+  }).join('') || '<tr><td colspan="13" class="text-center text-muted">Нет единиц для вывода из оборота</td></tr>';
 
   renderPagination('disposal', disposalPage, totalPages, data.total, 'disposalPage');
 }

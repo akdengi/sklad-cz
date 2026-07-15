@@ -201,9 +201,14 @@ body { background: #f0f2f5; }
       <div class="col-auto"><div class="form-check"><input class="form-check-input" type="checkbox" id="stock-no-cz"><label class="form-check-label small fw-semibold" for="stock-no-cz">Только без ЧЗ</label></div></div>
       <div class="col-auto"><label class="form-label small fw-semibold">Поиск</label><input type="text" class="form-control form-control-sm" id="stock-search" placeholder="ID, код ЧЗ, артикул" style="width:200px"></div>
     </div>
+    <div id="stock-toolbar" class="mb-2 d-none">
+      <button class="btn btn-outline-info btn-sm" onclick="batchCzCheck('stock')"><i class="bi bi-arrow-clockwise"></i> Проверить статус в ЧЗ (<span id="stock-selected-count">0</span>)</button>
+      <button class="btn btn-outline-secondary btn-sm ms-2" onclick="clearSelection('stock')"><i class="bi bi-x-lg"></i> Снять выделение</button>
+    </div>
     <div class="table-responsive">
     <table class="table table-hover align-middle mb-0" id="stock-table">
       <thead class="table-light"><tr>
+        <th style="width:40px"><input type="checkbox" class="form-check-input" id="stock-select-all" onchange="toggleSelectAll('stock', this.checked)"></th>
         <th class="sortable" data-sort="id">ID <i class="bi bi-arrow-down-up small"></i></th>
         <th class="sortable" data-sort="sku_name">SKU <i class="bi bi-arrow-down-up small"></i></th>
         <th class="sortable" data-sort="article">Артикул <i class="bi bi-arrow-down-up small"></i></th>
@@ -247,9 +252,14 @@ body { background: #f0f2f5; }
       </div>
       <div class="col-auto"><label class="form-label small fw-semibold">Поиск</label><input type="text" class="form-control form-control-sm" id="sold-search" placeholder="ID, код ЧЗ, заказ, артикул" style="width:200px"></div>
     </div>
+    <div id="sold-toolbar" class="mb-2 d-none">
+      <button class="btn btn-outline-info btn-sm" onclick="batchCzCheck('sold')"><i class="bi bi-arrow-clockwise"></i> Проверить статус в ЧЗ (<span id="sold-selected-count">0</span>)</button>
+      <button class="btn btn-outline-secondary btn-sm ms-2" onclick="clearSelection('sold')"><i class="bi bi-x-lg"></i> Снять выделение</button>
+    </div>
     <div class="table-responsive">
     <table class="table table-hover align-middle mb-0" id="sold-table">
       <thead class="table-light"><tr>
+        <th style="width:40px"><input type="checkbox" class="form-check-input" id="sold-select-all" onchange="toggleSelectAll('sold', this.checked)"></th>
         <th>#</th><th>SKU</th><th>Артикул</th><th>Склад</th><th>Заказ</th><th>Дата продажи</th><th>Цена</th><th>Продан</th><th>Статус ЧЗ</th><th>Вывод из оборота</th><th>Код ЧЗ</th><th></th>
       </tr></thead>
       <tbody></tbody>
@@ -285,9 +295,15 @@ body { background: #f0f2f5; }
       </div>
       <div class="col-auto"><label class="form-label small fw-semibold">Поиск</label><input type="text" class="form-control form-control-sm" id="disposal-search" placeholder="ID, код ЧЗ, заказ, артикул" style="width:200px"></div>
     </div>
+    <div id="disposal-toolbar" class="mb-2 d-none">
+      <button class="btn btn-outline-info btn-sm" onclick="batchCzCheck('disposal')"><i class="bi bi-arrow-clockwise"></i> Проверить статус в ЧЗ (<span id="disposal-selected-count">0</span>)</button>
+      <button class="btn btn-outline-secondary btn-sm ms-2" onclick="clearSelection('disposal')"><i class="bi bi-x-lg"></i> Снять выделение</button>
+    </div>
     <div class="table-responsive">
     <table class="table table-hover align-middle mb-0" id="disposal-table">
-      <thead class="table-light"><tr><th>ID</th><th>SKU</th><th>Код ЧЗ</th><th>Склад</th><th>Тип операции</th><th>Причина</th><th>Документ</th><th>Дата</th><th>Цена</th><th>Статус отчета</th><th>Статус в ЧЗ</th><th></th></tr></thead>
+      <thead class="table-light"><tr>
+        <th style="width:40px"><input type="checkbox" class="form-check-input" id="disposal-select-all" onchange="toggleSelectAll('disposal', this.checked)"></th>
+        <th>ID</th><th>SKU</th><th>Код ЧЗ</th><th>Склад</th><th>Тип операции</th><th>Причина</th><th>Документ</th><th>Дата</th><th>Цена</th><th>Статус отчета</th><th>Статус в ЧЗ</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
     </div>

@@ -139,6 +139,17 @@ def init_db(app):
             db.session.rollback()
             print(f"[warn] Не удалось создать уникальный индекс: {e}")
 
+        # Миграция disposal_status: 2 -> 1 (старое "Подтверждено ЧЗ" → новое)
+        try:
+            result = db.session.execute(
+                text("UPDATE unit SET disposal_status = 1 WHERE disposal_status = 2")
+            )
+            if result.rowcount > 0:
+                db.session.commit()
+                print(f"  [migration] unit: disposal_status 2 -> 1 ({result.rowcount} rows)")
+        except Exception as e:
+            db.session.rollback()
+
         if Warehouse.query.count() == 0:
             for name in ["Склад", "Озон", "Яндекс Маркет"]:
                 db.session.add(Warehouse(name=name))
