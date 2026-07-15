@@ -35,7 +35,7 @@ const DISPOSAL_REASONS = {
   "market_recall":"Отзыв товара с рынка",
 };
 const DISPOSAL_REASONS_NO_DOCS = ["own_needs","production","gratuitous_transfer","loss","market_recall"];
-const DISPOSAL_STATUSES = ["Не начато","Отправлено в ЧЗ","Подтверждено ЧЗ"];
+const DISPOSAL_STATUSES = ["Не начато","Подтверждено ЧЗ"];
 
 let editingSkuId = null, editingUnitId = null;
 let czDuplicateCheckTimer = null;
@@ -58,9 +58,20 @@ document.addEventListener('DOMContentLoaded', () => {
       link.classList.add('active');
       document.querySelectorAll('.tab').forEach(t => t.classList.add('d-none'));
       document.getElementById('tab-' + link.dataset.tab).classList.remove('d-none');
+      localStorage.setItem('activeTab', link.dataset.tab);
       render();
     });
   });
+  const savedTab = localStorage.getItem('activeTab');
+  if (savedTab) {
+    const target = document.querySelector(`#nav .nav-link[data-tab="${savedTab}"]`);
+    if (target) {
+      document.querySelectorAll('#nav .nav-link').forEach(x => x.classList.remove('active'));
+      target.classList.add('active');
+      document.querySelectorAll('.tab').forEach(t => t.classList.add('d-none'));
+      document.getElementById('tab-' + savedTab).classList.remove('d-none');
+    }
+  }
   document.querySelectorAll('#stock-table th.sortable').forEach(th => {
     th.addEventListener('click', () => toggleSort(th.dataset.sort));
   });
@@ -154,7 +165,7 @@ function statusBadge(s) {
 }
 
 function disposalBadge(s) {
-  const v = ['secondary', 'warning', 'info', 'success'];
+  const v = ['secondary', 'success'];
   return `<span class="badge bg-${v[s] || 'secondary'}">${DISPOSAL_STATUSES[s] || '—'}</span>`;
 }
 
@@ -712,10 +723,8 @@ async function openUnitModal(id, presetSkuId) {
     document.getElementById('unit-sku').value = u.sku_id;
     onUnitSkuChange();
     document.getElementById('unit-cz').value = normalizeCZ(u.cz_code || '').replace(/^\xe8/, '');
-    const czMapped = u.cz_status ? CZ_TO_UNIT_STATUS[u.cz_status] : undefined;
-    const effectiveStatus = czMapped !== undefined ? czMapped : u.status;
-    document.getElementById('unit-status').value = effectiveStatus;
-    document.getElementById('unit-status-select').value = effectiveStatus;
+    document.getElementById('unit-status').value = u.status;
+    document.getElementById('unit-status-select').value = u.status;
     const soldCheck = document.getElementById('unit-sold-check');
     soldCheck.checked = !!u.sold_date;
     document.getElementById('unit-cz-status-display').innerHTML = u.cz_status
@@ -824,10 +833,6 @@ async function czCheckFromEdit() {
       const czName = CZ_STATUS_MAP[r.cz_status] || CZ_STATUS_EXT_MAP[r.cz_status] || r.cz_status;
       czDisplay.innerHTML = czStatusBadge(r.cz_status) + (r.cz_check_date ? ` <small class="text-muted">(${esc(r.cz_check_date)})</small>` : '');
       document.getElementById('unit-cz-status-val').value = r.cz_status || '';
-      if (r.unit_status !== undefined) {
-        document.getElementById('unit-status').value = String(r.unit_status);
-        document.getElementById('unit-status-select').value = String(r.unit_status);
-      }
       if (r.disposal_status !== undefined) {
         document.getElementById('unit-disposal-status').value = String(r.disposal_status);
       }
@@ -959,7 +964,7 @@ async function showUnitDetail(id) {
   let disposalHtml = '';
   if (u.disposal_type && full) {
     disposalHtml = `
-      <div class="modal-disposal ${u.disposal_status >= 1 ? 'border-success' : ''}">
+      <div class="modal-disposal ${u.disposal_status === 1 ? 'border-success' : ''}">
         <h6><i class="bi bi-arrow-up-right"></i> Данные для отчёта о выводе из оборота</h6>
         <p class="mb-1"><strong>Тип операции:</strong> ${DISPOSAL_TYPES[u.disposal_type] || u.disposal_type}</p>
         <p class="mb-1"><strong>Причина:</strong> ${DISPOSAL_REASONS[u.disposal_reason] || u.disposal_reason || '—'}</p>
@@ -1375,6 +1380,7 @@ async function renderStock() {
       <td><span class="text-primary font-monospace fw-semibold">${esc(u.sku_article || '—')}</span></td>
       <td>${warehouseBadge(u.warehouse_name)}</td>
       <td>${statusBadge(u.status)}${u.was_returned ? ' <span class="badge bg-danger"><i class="bi bi-arrow-counterclockwise"></i> Возвраты</span>' : ''}${u.cz_code && u.cz_offline_valid === false ? ' <span class="badge bg-danger" title="Оффлайн-валидация не пройдена"><i class="bi bi-exclamation-triangle"></i></span>' : ''}${u.cz_status && ['BLOCKED', 'UNDEFINED', 'EMPTY'].includes(u.cz_status) ? ' <span class="badge bg-warning text-dark" title="Проблема со статусом в ЧЗ"><i class="bi bi-exclamation-circle"></i></span>' : ''}</td>
+      <td>${u.cz_status ? czStatusBadge(u.cz_status) : '<span class="text-muted">—</span>'}</td>
       <td>${u.cz_code ? `<div class="code-box" style="font-size:10px${u.cz_offline_valid === false ? ';border-color:#e53935;background:#fce4ec' : ''}">${esc(normalizeCZ(u.cz_code).replace(/\xe8/g, '')).replace(/\u001d/g, '<b class="text-danger">␝</b>')}</div>` : '<span class="text-warning"><i class="bi bi-hourglass-split"></i> нет ЧЗ</span>'}</td>
       <td class="text-nowrap">
         <div class="btn-group btn-group-sm">
@@ -1388,7 +1394,7 @@ async function renderStock() {
         </div>
       </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="7" class="text-center text-muted">Нет единиц</td></tr>';
+  }).join('') || '<tr><td colspan="8" class="text-center text-muted">Нет единиц</td></tr>';
 
   renderPagination('stock', stockPage, totalPages, total, 'stockPage');
 }
@@ -1448,7 +1454,7 @@ async function renderSold() {
         <button class="btn btn-outline-primary btn-sm" onclick="showUnitDetail(${u.id})" title="Подробнее"><i class="bi bi-info-circle"></i></button>
         <button class="btn btn-outline-secondary btn-sm" onclick="openUnitModal(${u.id})" title="Изменить"><i class="bi bi-pencil"></i></button>
         <button class="btn btn-outline-info btn-sm" onclick="openLabelsForUnit(${u.sku_id},${u.id})" title="Этикетка"><i class="bi bi-tag"></i></button>
-        ${u.status === 5 && u.disposal_status === 3 ? `<button class="btn btn-outline-warning btn-sm" onclick="openReturnModal(${u.id})" title="Вернуть на склад"><i class="bi bi-arrow-counterclockwise"></i></button>` : ''}
+        ${[4,5].includes(u.status) && u.disposal_status === 1 && ['RETIRED','WITHDRAWN','WRITTEN_OFF'].includes(u.cz_status) ? `<button class="btn btn-outline-warning btn-sm" onclick="openReturnModal(${u.id})" title="Вернуть на склад"><i class="bi bi-arrow-counterclockwise"></i></button>` : ''}
         <button class="btn btn-outline-danger btn-sm" onclick="openDeleteSaleModal(${u.id})" title="Удалить продажу"><i class="bi bi-trash"></i></button>
       </td>
     </tr>`;
@@ -1549,13 +1555,14 @@ async function renderDisposal() {
       <td>${fmtDate(u.disposal_doc_date)}${deadlineBadge}</td>
       <td>${u.disposal_price ? u.disposal_price.toFixed(2) : '—'}</td>
       <td>${disposalBadge(u.disposal_status)}</td>
+      <td>${u.cz_status ? czStatusBadge(u.cz_status) : '<span class="text-muted">—</span>'}</td>
       <td class="text-nowrap">
         <button class="btn btn-outline-primary btn-sm" onclick="showUnitDetail(${u.id})" title="Подробнее"><i class="bi bi-info-circle"></i></button>
         <button class="btn btn-outline-secondary btn-sm" onclick="openUnitModal(${u.id})" title="Изменить"><i class="bi bi-pencil"></i></button>
-        ${[4,5].includes(u.status) && u.disposal_status === 2 && ['RETIRED','WITHDRAWN','WRITTEN_OFF'].includes(u.cz_status) ? `<button class="btn btn-outline-warning btn-sm" onclick="openReturnModal(${u.id})" title="Вернуть в оборот"><i class="bi bi-arrow-counterclockwise"></i></button>` : ''}
+        ${[4,5].includes(u.status) && u.disposal_status === 1 && ['RETIRED','WITHDRAWN','WRITTEN_OFF'].includes(u.cz_status) ? `<button class="btn btn-outline-warning btn-sm" onclick="openReturnModal(${u.id})" title="Вернуть в оборот"><i class="bi bi-arrow-counterclockwise"></i></button>` : ''}
       </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="11" class="text-center text-muted">Нет единиц для вывода из оборота</td></tr>';
+  }).join('') || '<tr><td colspan="12" class="text-center text-muted">Нет единиц для вывода из оборота</td></tr>';
 
   renderPagination('disposal', disposalPage, totalPages, data.total, 'disposalPage');
 }

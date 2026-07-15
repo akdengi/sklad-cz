@@ -209,6 +209,7 @@ body { background: #f0f2f5; }
         <th class="sortable" data-sort="article">Артикул <i class="bi bi-arrow-down-up small"></i></th>
         <th class="sortable" data-sort="warehouse">Склад <i class="bi bi-arrow-down-up small"></i></th>
         <th class="sortable" data-sort="status">Статус <i class="bi bi-arrow-down-up small"></i></th>
+        <th>Статус в ЧЗ</th>
         <th>Код ЧЗ</th><th>Действия</th>
       </tr></thead>
       <tbody></tbody>
@@ -268,7 +269,7 @@ body { background: #f0f2f5; }
         <select class="form-select form-select-sm" id="disposal-status-filter">
           <option value="all">Все</option>
           <option value="0">Не начато</option>
-          <option value="1">Отправлено в ЧЗ</option><option value="2">Подтверждено ЧЗ</option>
+          <option value="1">Подтверждено ЧЗ</option>
         </select>
       </div>
       <div class="col-auto"><label class="form-label small fw-semibold">Дата с</label><div class="input-group input-group-sm"><input type="text" class="form-control" id="disposal-date-from" placeholder="дд.мм.гггг" style="width:110px" readonly><input type="date" class="d-none" id="disposal-date-from-pick"><button class="btn btn-outline-secondary" type="button" onclick="openDatePicker('disposal-date-from')"><i class="bi bi-calendar3"></i></button></div></div>
@@ -286,7 +287,7 @@ body { background: #f0f2f5; }
     </div>
     <div class="table-responsive">
     <table class="table table-hover align-middle mb-0" id="disposal-table">
-      <thead class="table-light"><tr><th>ID</th><th>SKU</th><th>Код ЧЗ</th><th>Склад</th><th>Тип операции</th><th>Причина</th><th>Документ</th><th>Дата</th><th>Цена</th><th>Статус</th><th></th></tr></thead>
+      <thead class="table-light"><tr><th>ID</th><th>SKU</th><th>Код ЧЗ</th><th>Склад</th><th>Тип операции</th><th>Причина</th><th>Документ</th><th>Дата</th><th>Цена</th><th>Статус отчета</th><th>Статус в ЧЗ</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
     </div>
@@ -668,7 +669,7 @@ body { background: #f0f2f5; }
             <div class="col-md-4"><label class="form-label small fw-semibold">Статус отчёта</label>
               <select class="form-select form-select-sm" id="unit-disposal-status">
                 <option value="0">Не начато</option>
-                <option value="1">Отправлено в ЧЗ</option><option value="2">Подтверждено ЧЗ</option>
+                <option value="1">Подтверждено ЧЗ</option>
               </select>
             </div>
           </div>

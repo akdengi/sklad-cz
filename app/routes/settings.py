@@ -508,9 +508,9 @@ def cz_check_single():
             new_status = CZ_TO_UNIT_STATUS.get(cz_status_raw)
             if new_status is not None and new_status > unit.status:
                 unit.status = new_status
-            if (unit.disposal_status == 2
-                    and cz_status_raw in ('RETIRED', 'WITHDRAWN', 'WRITTEN_OFF')):
-                unit.disposal_status = 3
+            # Если статус ЧЗ "Выбыл" — автоматически подтверждаем отчёт
+            if cz_status_raw in ('RETIRED', 'WITHDRAWN', 'WRITTEN_OFF'):
+                unit.disposal_status = 1
             from app import db
             db.session.commit()
             return jsonify({
@@ -590,9 +590,9 @@ def _do_cz_check_all():
                             new_status = CZ_TO_UNIT_STATUS.get(status)
                             if new_status is not None and new_status > unit_by_code[cis].status:
                                 unit_by_code[cis].status = new_status
-                            if (unit_by_code[cis].disposal_status == 2
-                                    and status in ('RETIRED', 'WITHDRAWN', 'WRITTEN_OFF')):
-                                unit_by_code[cis].disposal_status = 3
+                            # Если статус ЧЗ "Выбыл" — автоматически подтверждаем отчёт
+                            if status in ('RETIRED', 'WITHDRAWN', 'WRITTEN_OFF'):
+                                unit_by_code[cis].disposal_status = 1
                     for code in batch:
                         if code not in found_codes and code in unit_by_code:
                             unit_by_code[code].cz_status = None

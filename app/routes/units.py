@@ -266,26 +266,56 @@ def delete_sale(uid):
     u = Unit.query.get_or_404(uid)
     if u.status not in (4, 5):
         abort(400, "Удаление продажи доступно только для проданных/выбывших товаров")
-    u.status = 0
-    u.sold_date = None
-    u.order_number = None
-    u.disposal_type = None
-    u.disposal_reason = None
-    u.disposal_doc_type = None
-    u.disposal_doc_name = None
-    u.disposal_doc_number = None
-    u.disposal_doc_date = None
-    u.disposal_address = None
-    u.disposal_fias_id = None
-    u.disposal_price = None
-    u.disposal_status = 0
-    u.cz_status = None
-    u.cz_check_date = None
-    u.updated_at = datetime.utcnow()
+
+    # Проверяем, был ли товар перемещен на виртуальный склад при продаже
+    # Если да, нужно найти исходную единицу на физическом складе
+    source_unit = None
+    if u.cz_code:
+        # Ищем исходную единицу без ЧЗ-кода на другом складе с тем же SKU
+        source_unit = Unit.query.filter(
+            Unit.sku_id == u.sku_id,
+            Unit.warehouse_id != u.warehouse_id,
+            Unit.status == 0,
+            or_(Unit.cz_code == None, Unit.cz_code == ''),
+        ).first()
+
+    if source_unit:
+        # Возвращаем ЧЗ-код на исходную единицу
+        source_unit.cz_code = u.cz_code
+        source_unit.cz_offline_valid = u.cz_offline_valid
+        source_unit.updated_at = datetime.utcnow()
+        # Удаляем единицу с виртуального склада
+        db.session.delete(u)
+    else:
+        # Обычный сброс без перемещения между складами
+        u.status = 0
+        u.sold_date = None
+        u.order_number = None
+        u.was_returned = False
+
+        # Очищаем данные вывода из оборота
+        u.disposal_type = None
+        u.disposal_reason = None
+        u.disposal_doc_type = None
+        u.disposal_doc_name = None
+        u.disposal_doc_number = None
+        u.disposal_doc_date = None
+        u.disposal_address = None
+        u.disposal_fias_id = None
+        u.disposal_price = None
+        u.disposal_status = 0
+
+        # Очищаем статус ЧЗ
+        u.cz_status = None
+        u.cz_check_date = None
+        u.cz_offline_valid = None
+
+        u.updated_at = datetime.utcnow()
+
     db.session.commit()
     return jsonify({
-        "unit": u.to_dict(),
-        "message": "Продажа удалена. Если отчет о выбытии был подан в ЧЗ — подайте отчет о возврате.",
+        "unit": (source_unit or u).to_dict(),
+        "message": "Продажа удалена. Товар возвращен на склад. Если отчет о выбытии был подан в ЧЗ — подайте отчет о возврате.",
     })
 
 
@@ -755,8 +785,9 @@ def update_unit(uid):
     u.disposal_fias_id = data.get("disposal_fias_id", u.disposal_fias_id)
     u.disposal_price = data.get("disposal_price", u.disposal_price)
     new_disposal_status = int(data.get("disposal_status") or u.disposal_status)
-    if new_disposal_status == 2 and u.cz_status not in ('RETIRED', 'WITHDRAWN', 'WRITTEN_OFF'):
-        new_disposal_status = 1
+    # Подтверждение ЧЗ возможно только при статусе Выбыл
+    if new_disposal_status == 1 and u.cz_status not in ('RETIRED', 'WITHDRAWN', 'WRITTEN_OFF'):
+        new_disposal_status = 0
     u.disposal_status = new_disposal_status
     u.updated_at = datetime.utcnow()
     try:

@@ -49,7 +49,7 @@ def summary():
         Unit.status.in_([4, 5]),
     ).join(SKU).filter(SKU.has_marking == True).count()
     disposal_sent = Unit.query.filter(
-        Unit.disposal_status == 2,
+        Unit.disposal_status == 1,
     ).count()
 
     today = datetime.utcnow().date()
