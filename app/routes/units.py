@@ -531,7 +531,7 @@ def quick_sell():
 
     unit.disposal_type = "shipment"
     unit.disposal_reason = "remote_sale"
-    unit.disposal_doc_type = "прочее"
+    unit.disposal_doc_type = (data.get("disposal_doc_type") or "прочее").strip()
     unit.disposal_doc_name = f"Заказ {order_number}" if order_number else ""
     unit.disposal_doc_number = order_number or ""
     unit.disposal_doc_date = unit.sold_date

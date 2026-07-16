@@ -84,11 +84,11 @@ body { background: #f0f2f5; }
   <div class="card mb-3"><div class="card-body">
     <h5 class="card-title mb-3"><i class="bi bi-lightning"></i> Быстрая продажа</h5>
     <div class="row g-3 mb-3">
-      <div class="col-md-4">
+      <div class="col-md-3">
         <label class="form-label fw-semibold">Номер заказа *</label>
         <input type="text" class="form-control" id="qs-order" placeholder="№ заказа">
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
         <label class="form-label fw-semibold">Склад списания *</label>
         <select class="form-select" id="qs-target-warehouse"></select>
         <small class="text-muted">Виртуальный склад маркетплейса</small>
@@ -96,6 +96,16 @@ body { background: #f0f2f5; }
       <div class="col-md-2">
         <label class="form-label fw-semibold">Дата продажи</label>
         <input type="date" class="form-control" id="qs-sell-date">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label fw-semibold">Вид док-та</label>
+        <select class="form-select" id="qs-doc-type">
+          <option value="прочее" selected>Прочее</option>
+          <option value="УПД">УПД</option>
+          <option value="товарная накладная">Товарная накладная</option>
+          <option value="акт приема-передачи">Акт приёма-передачи</option>
+          <option value="кассовый чек">Кассовый чек</option>
+        </select>
       </div>
       <div class="col-md-2 d-flex align-items-end">
         <button class="btn btn-success btn-lg w-100" id="qs-submit-btn" onclick="submitCart()" disabled>
@@ -665,8 +675,9 @@ body { background: #f0f2f5; }
             <div class="col-md-4 disposal-docs-required"><label class="form-label small fw-semibold">Вид первичного документа</label>
               <select class="form-select form-select-sm" id="unit-disposal-doc-type">
                 <option value="">— не выбран —</option>
-                <option value="прочее">прочее</option><option value="товарная накладная">товарная накладная</option>
-                <option value="акт приема-передачи">акт приема-передачи</option><option value="кассовый чек">кассовый чек</option><option value="УПД">УПД</option>
+                <option value="прочее">Прочее</option><option value="УПД">УПД</option>
+                <option value="товарная накладная">товарная накладная</option>
+                <option value="акт приема-передачи">акт приема-передачи</option><option value="кассовый чек">кассовый чек</option>
               </select>
             </div>
             <div class="col-md-8 disposal-docs-required"><label class="form-label small fw-semibold">Наименование документа</label><input type="text" class="form-control form-control-sm" id="unit-disposal-doc-name" placeholder="Напр. Заказ №123"></div>

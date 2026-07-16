@@ -786,7 +786,11 @@ async function openUnitModal(id, presetSkuId) {
     onUnitSkuChange();
     document.getElementById('unit-cz').value = normalizeCZ(u.cz_code || '').replace(/^\xe8/, '');
     document.getElementById('unit-status').value = u.status;
-    document.getElementById('unit-status-select').value = u.status;
+    if (u.status === 4 && u.cz_status && CZ_TO_UNIT_STATUS[u.cz_status]) {
+      document.getElementById('unit-status-select').value = CZ_TO_UNIT_STATUS[u.cz_status];
+    } else {
+      document.getElementById('unit-status-select').value = u.status;
+    }
     const soldCheck = document.getElementById('unit-sold-check');
     soldCheck.checked = !!u.sold_date;
     document.getElementById('unit-cz-status-display').innerHTML = u.cz_status
@@ -1267,8 +1271,30 @@ function renderCart() {
     html += `</tr>`;
   });
 
-  html += `</tbody></table></div></div></div>`;
+  html += `</tbody></table></div>`;
+  html += `<div class="d-flex gap-2 mt-2">
+    <button class="btn btn-outline-primary btn-sm" onclick="downloadCartKM()"><i class="bi bi-download"></i> Скачать КМ в csv</button>
+  </div>`;
+  html += `</div></div>`;
   el.innerHTML = html;
+}
+
+function downloadCartKM() {
+  if (qsCart.length === 0) { toast('Корзина пуста', 'error'); return; }
+  let csv = '';
+  qsCart.forEach(item => {
+    if (item.has_marking && item.cz_code) {
+      const czNorm = normalizeCZ(item.cz_code);
+      const turn = czNorm.split('\u001d')[0].replace(/^\xe8/, '');
+      csv += turn + '\n';
+    }
+  });
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `km_cart_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  toast('CSV скачан', 'success');
 }
 
 async function submitCart() {
@@ -1277,6 +1303,7 @@ async function submitCart() {
   const targetWh = parseInt(document.getElementById('qs-target-warehouse').value);
   const orderNumber = document.getElementById('qs-order').value.trim();
   const sellDate = document.getElementById('qs-sell-date').value;
+  const docType = document.getElementById('qs-doc-type').value;
   const resultDiv = document.getElementById('qs-result');
 
   if (!orderNumber) { toast('Введите номер заказа', 'error'); return; }
@@ -1295,6 +1322,7 @@ async function submitCart() {
         if (orderNumber) payload.order_number = orderNumber;
         if (item.price) payload.disposal_price = item.price;
         if (sellDate) payload.sold_date = sellDate;
+        if (docType) payload.disposal_doc_type = docType;
         await api('/api/units/quick-sell', { method: 'POST', body: JSON.stringify(payload) });
       } else {
         const payload = {};
