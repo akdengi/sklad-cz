@@ -1053,6 +1053,19 @@ async function showUnitDetail(id) {
     ${u.cz_status ? `<p><strong>Статус в ЧЗ:</strong> ${czStatusBadge(u.cz_status)} <small class="text-muted">(${esc(u.cz_check_date || '—')})</small> ${full ? `<button class="btn btn-outline-info btn-sm ms-2" onclick="czCheckSingle(${u.id}).then(() => showUnitDetail(${u.id}))"><i class="bi bi-arrow-clockwise"></i> Обновить</button>` : ''}</p>` : (full ? `<p><strong>Статус в ЧЗ:</strong> <span class="text-muted">КМ не найден в ЧЗ</span> <button class="btn btn-outline-info btn-sm ms-2" onclick="czCheckSingle(${u.id}).then(() => showUnitDetail(${u.id}))"><i class="bi bi-arrow-clockwise"></i> Проверить</button></p>` : '')}
     ${u.order_number ? `<p><strong>Номер заказа:</strong> ${esc(u.order_number)}</p>` : ''}
     ${u.sold_date ? `<p><strong>Дата продажи:</strong> ${fmtDate(u.sold_date)}</p>` : ''}
+    ${![4,5].includes(u.status) && full ? `
+    <div class="d-flex gap-2 align-items-center mb-3 p-2 border rounded bg-light">
+      <span class="fw-semibold small">Списать:</span>
+      <select class="form-select form-select-sm" id="writeoff-reason-${u.id}" style="width:auto">
+        <option value="loss">Утеря</option>
+        <option value="own_needs">Собственные нужды</option>
+        <option value="production">Производственные цели</option>
+        <option value="gratuitous_transfer">Безвозмездная передача</option>
+        <option value="market_recall">Отзыв с рынка</option>
+      </select>
+      <button class="btn btn-outline-warning btn-sm" onclick="writeOffUnit(${u.id})"><i class="bi bi-x-octagon"></i> Списать</button>
+    </div>
+    ` : ''}
     ${full ? `
       <h6 class="mt-3">Код маркировки (КИЗ) — полный</h6>
       <div class="text-center mb-2"><img src="/api/units/${u.id}/dm-image" alt="DataMatrix КИЗ" style="max-width:200px;border:1px solid #ddd;border-radius:4px" /></div>
@@ -1084,6 +1097,18 @@ async function showUnitDetail(id) {
 function copyText(t) {
   navigator.clipboard.writeText(t);
   toast('Скопировано', 'success');
+}
+
+async function writeOffUnit(id) {
+  const reason = document.getElementById(`writeoff-reason-${id}`).value;
+  const reasonNames = { loss: 'утеря', own_needs: 'собственные нужды', production: 'производство', gratuitous_transfer: 'безвозмездная передача', market_recall: 'отзыв с рынка' };
+  if (!confirm(`Списать товар #${id} (${reasonNames[reason] || reason})?\n\nСтатус изменится на «Выбыл», отчёт о выбытии будет подан в ЧЗ.`)) return;
+  try {
+    const r = await api(`/api/units/${id}/write-off`, { method: 'POST', body: JSON.stringify({ reason }) });
+    toast(r.message, 'success');
+    unitDetailModal.hide();
+    render();
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 // ============ QUICK SELL (CART) ============

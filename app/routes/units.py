@@ -558,6 +558,40 @@ def quick_sell():
     })
 
 
+@units_bp.route("/<int:uid>/write-off", methods=["POST"])
+def write_off_unit(uid):
+    """Списание товара (продажа с нулевой ценой) для собственных нужд, утери и т.д."""
+    unit = Unit.query.get_or_404(uid)
+    if unit.status in (4, 5):
+        abort(400, "Товар уже выбыл")
+
+    data = request.json or {}
+    reason = (data.get("reason") or "loss").strip()
+    valid_reasons = ["own_needs", "production", "gratuitous_transfer", "loss", "market_recall"]
+    if reason not in valid_reasons:
+        abort(400, f"Недопустимая причина: {reason}")
+
+    unit.status = 4
+    unit.sold_date = datetime.utcnow().strftime("%Y-%m-%d")
+    unit.disposal_type = "shipment"
+    unit.disposal_reason = reason
+    unit.disposal_doc_type = "прочее"
+    unit.disposal_doc_name = ""
+    unit.disposal_doc_number = ""
+    unit.disposal_doc_date = unit.sold_date
+    unit.disposal_price = 0
+
+    from app.utils import load_settings
+    settings = load_settings()
+    unit.disposal_address = settings.get("default_disposal_address") or None
+    unit.disposal_fias_id = settings.get("default_disposal_fias_id") or None
+    unit.disposal_status = 0
+    unit.updated_at = datetime.utcnow()
+
+    db.session.commit()
+    return jsonify({"unit": unit.to_dict(), "message": "Товар списан"})
+
+
 @units_bp.route("/sell-no-marking", methods=["POST"])
 def sell_no_marking():
     """Продажа товара без маркировки по GTIN/EAN13 или SKU ID."""
