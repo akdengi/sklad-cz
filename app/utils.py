@@ -37,6 +37,49 @@ DISPOSAL_STATUSES = [
 
 SETTINGS_PATH = Path(__file__).parent.parent / "instance" / "settings.json"
 
+PRODUCT_GROUPS = [
+    (1, "lp", "Лёгкая промышленность"),
+    (5, "tires", "Шины и покрышки пневматические резиновые новые"),
+    (6, "electronics", "Фотокамеры, фотовспышки и лампы-вспышки"),
+    (9, "bicycle", "Велосипеды и велосипедные рамы"),
+    (19, "antiseptic", "Антисептики и дезинфицирующие средства"),
+    (27, "toys", "Игры и игрушки для детей"),
+    (28, "radio", "Радиоэлектронная продукция"),
+    (31, "titan", "Титановая металлопродукция"),
+    (34, "opticfiber", "Оптоволокно и оптоволоконная продукция"),
+    (35, "chemistry", "Косметика, бытовая химия и товары личной гигиены"),
+    (36, "books", "Печатная продукция"),
+    (39, "construction", "Строительные материалы"),
+    (40, "fire", "Пиротехника и огнетушащее оборудование"),
+    (41, "heater", "Отопительные приборы"),
+    (42, "cableraw", "Кабельно-проводниковая продукция"),
+    (43, "autofluids", "Моторные масла"),
+    (44, "polymer", "Полимерные трубы"),
+    (48, "carparts", "Автозапчасти и комплектующие транспортных средств"),
+    (51, "gadgets", "Ноутбуки и смартфоны"),
+    (53, "fertilizers", "Удобрения в потребительской упаковке"),
+    (54, "homeware", "Товары для дома и интерьера"),
+    (59, "pyrotechnics", "Пиротехнические изделия"),
+]
+
+DEFAULT_PRODUCT_GROUP = "27"
+
+
+def get_product_group_code(numeric_id) -> str:
+    """Получить строковый код товарной группы по числовому ID."""
+    for pg_id, code, _ in PRODUCT_GROUPS:
+        if str(pg_id) == str(numeric_id):
+            return code
+    return ""
+
+
+def get_product_group_name(numeric_id) -> str:
+    """Получить название товарной группы по числовому ID."""
+    for pg_id, _, name in PRODUCT_GROUPS:
+        if str(pg_id) == str(numeric_id):
+            return name
+    return f"Группа {numeric_id}"
+
 
 def load_settings() -> dict:
     if SETTINGS_PATH.exists():

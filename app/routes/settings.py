@@ -6,7 +6,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 from flask import Blueprint, request, jsonify
-from app.utils import load_settings, save_settings
+from app.utils import load_settings, save_settings, PRODUCT_GROUPS, DEFAULT_PRODUCT_GROUP
 from app.config import MAX_BACKUPS, CZ_API_URL, REMOTE_HOST
 
 logger = logging.getLogger(__name__)
@@ -50,6 +50,7 @@ def get_cz_settings():
         "cz_cert_thumbprint": s.get("cz_cert_thumbprint", ""),
         "default_disposal_address": s.get("default_disposal_address", ""),
         "default_disposal_fias_id": s.get("default_disposal_fias_id", ""),
+        "product_group": s.get("product_group", DEFAULT_PRODUCT_GROUP),
     })
 
 
@@ -71,6 +72,8 @@ def set_cz_settings():
         s["default_disposal_address"] = data["default_disposal_address"]
     if "default_disposal_fias_id" in data:
         s["default_disposal_fias_id"] = data["default_disposal_fias_id"]
+    if "product_group" in data:
+        s["product_group"] = data["product_group"]
     save_settings(s)
     return jsonify({"ok": True, "has_token": bool(s.get("cz_api_token"))})
 
@@ -692,3 +695,76 @@ def cz_debug():
             pass
 
     return jsonify(debug)
+
+
+# ===== PRODUCT GROUP BALANCE & MOD =====
+
+from app.utils import get_product_group_code, get_product_group_name
+
+
+@settings_bp.route("/api/balance", methods=["GET"])
+def get_balance():
+    import requests as req
+    s = load_settings()
+    product_group_id = s.get("product_group", DEFAULT_PRODUCT_GROUP)
+    try:
+        from app.cz_api import get_uuid_token
+        token = get_uuid_token()
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Ошибка авторизации: {e}"})
+    base = s.get("cz_api_url", "").rstrip("/") or "https://markirovka.crpt.ru/api/v3/true-api"
+    url = f"{base}/elk/product-groups/balance?productGroupId={product_group_id}"
+    try:
+        r = req.get(url, headers={"Authorization": f"Bearer {token}", "accept": "application/json"}, timeout=30)
+        if r.status_code == 200:
+            data = r.json()
+            return jsonify({
+                "ok": True,
+                "balance": data.get("balance", 0),
+                "contract_id": data.get("contractId"),
+                "organisation_id": data.get("organisationId"),
+                "product_group_id": data.get("productGroupId"),
+                "product_group_name": get_product_group_name(product_group_id),
+            })
+        return jsonify({"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@settings_bp.route("/api/mod", methods=["GET"])
+def get_mod():
+    import requests as req
+    s = load_settings()
+    product_group_id = s.get("product_group", DEFAULT_PRODUCT_GROUP)
+    product_group_code = get_product_group_code(product_group_id)
+    inn = s.get("cz_inn", "")
+    if not inn:
+        return jsonify({"ok": False, "error": "ИНН не задан в настройках"})
+    if not product_group_code:
+        return jsonify({"ok": False, "error": "Неизвестная товарная группа"})
+    try:
+        from app.cz_api import get_uuid_token
+        token = get_uuid_token()
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Ошибка авторизации: {e}"})
+    base = s.get("cz_api_url", "").rstrip("/") or "https://markirovka.crpt.ru/api/v3/true-api"
+    url = f"{base}/mods/list?inns={inn}&productGroups={product_group_code}&limit=100&page=0"
+    try:
+        r = req.get(url, headers={"Authorization": f"Bearer {token}", "accept": "application/json"}, timeout=30)
+        if r.status_code == 200:
+            data = r.json()
+            results = data.get("result", [])
+            if results:
+                mod = results[0]
+                return jsonify({
+                    "ok": True,
+                    "address": mod.get("address", ""),
+                    "fias_id": mod.get("fiasId", ""),
+                    "inn": mod.get("inn", ""),
+                    "kpp": mod.get("kpp", ""),
+                    "product_groups": mod.get("productGroups", []),
+                })
+            return jsonify({"ok": False, "error": "not_found", "message": "МОД не найдена. Задайте МОД для данной товарной группы в ЛК ЧЗ: https://markirovka.crpt.ru/profile/mod"})
+        return jsonify({"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})

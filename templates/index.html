@@ -68,6 +68,35 @@ body { background: #f0f2f5; }
     <h5 class="card-title mb-3"><i class="bi bi-speedometer2"></i> Сводка</h5>
     <div class="row g-3" id="summary"></div>
   </div></div>
+  <div class="card mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h5 class="card-title mb-0"><i class="bi bi-wallet2"></i> Баланс лицевого счёта ЧЗ — <span id="balance-pg-name">—</span></h5>
+      <button class="btn btn-outline-primary btn-sm" id="balance-refresh-btn" onclick="loadBalance()"><i class="bi bi-arrow-clockwise"></i> Обновить баланс</button>
+    </div>
+    <div class="row g-3 align-items-center" id="balance-info">
+      <div class="col-auto">
+        <div class="stat-card" style="padding:.8rem">
+          <div class="num text-success" id="balance-amount">—</div>
+          <div class="lbl">Баланс (руб.)</div>
+        </div>
+      </div>
+      <div class="col-auto">
+        <div class="stat-card" style="padding:.8rem">
+          <div class="num text-primary" id="balance-contract">—</div>
+          <div class="lbl">Договор</div>
+        </div>
+      </div>
+      <div class="col-auto">
+        <div class="stat-card" style="padding:.8rem">
+          <div class="num text-secondary" id="balance-org">—</div>
+          <div class="lbl">Организация</div>
+        </div>
+      </div>
+      <div class="col">
+        <small class="text-muted" id="balance-status"></small>
+      </div>
+    </div>
+  </div></div>
   <div class="card"><div class="card-body">
     <h5 class="card-title mb-3"><i class="bi bi-clock-history"></i> Последние операции</h5>
     <div class="table-responsive">
@@ -425,11 +454,20 @@ body { background: #f0f2f5; }
   <div class="row g-3">
     <div class="col-md-6">
       <div class="card"><div class="card-body">
-        <h5 class="card-title mb-3"><i class="bi bi-geo-alt"></i> Адрес вывода из оборота по умолчанию</h5>
-        <div class="mb-3"><label class="form-label small fw-semibold">Адрес</label><input type="text" class="form-control form-control-sm" id="cz-default-address" placeholder="г. Город, ул. Пример, д. 1"></div>
-        <div class="mb-3"><label class="form-label small fw-semibold">FIAS ID</label><input type="text" class="form-control form-control-sm font-monospace" id="cz-default-fias" placeholder="00000000-0000-0000-0000-000000000000"></div>
-        <small class="text-muted d-block mb-3">Посмотреть FIAS ID для адреса можно на сайте <a href="https://fias.nalog.ru" target="_blank">fias.nalog.ru</a></small>
-        <button class="btn btn-primary btn-sm" onclick="saveCZSettings()"><i class="bi bi-check-lg"></i> Сохранить</button>
+        <h5 class="card-title mb-3"><i class="bi bi-geo-alt"></i> Адрес вывода из оборота (МОД) по умолчанию</h5>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Адрес МОД</label>
+          <input type="text" class="form-control form-control-sm" id="cz-default-address" readonly placeholder="Нажмите «Получить МОД» для загрузки">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">FIAS ID</label>
+          <input type="text" class="form-control form-control-sm font-monospace" id="cz-default-fias" readonly placeholder="—">
+        </div>
+        <div class="d-flex gap-2 align-items-center mb-2">
+          <button class="btn btn-outline-primary btn-sm" id="mod-fetch-btn" onclick="fetchMOD()"><i class="bi bi-cloud-download"></i> Получить данные МОД из ЧЗ</button>
+          <button class="btn btn-primary btn-sm" onclick="saveCZSettings()"><i class="bi bi-check-lg"></i> Сохранить</button>
+        </div>
+        <div id="mod-warning" class="alert alert-warning py-2 mb-2 d-none" style="font-size:13px"></div>
         <span id="cz-settings-status" class="ms-2 small"></span>
       </div></div>
     </div>
@@ -501,7 +539,7 @@ body { background: #f0f2f5; }
     </div>
     <div class="col-12">
       <div class="card"><div class="card-body">
-        <h5 class="card-title mb-3"><i class="bi bi-shield-lock"></i> Честный Знак — статусы</h5>
+        <h5 class="card-title mb-3"><i class="bi bi-shield-lock"></i> Настройки Честный Знак</h5>
         <div class="row g-2 mb-3">
           <div class="col-md-8">
             <label class="form-label small fw-semibold">URL API</label>
@@ -517,6 +555,33 @@ body { background: #f0f2f5; }
               <input type="password" class="form-control" id="cz-key-pin" placeholder="PIN">
               <button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('cz-key-pin', this)"><i class="bi bi-eye"></i></button>
             </div>
+          </div>
+          <div class="col-md-8">
+            <label class="form-label small fw-semibold">Товарная группа</label>
+            <select class="form-select form-select-sm" id="product-group">
+              <option value="1">1 — Лёгкая промышленность</option>
+              <option value="5">5 — Шины и покрышки</option>
+              <option value="6">6 — Фотокамеры и вспышки</option>
+              <option value="9">9 — Велосипеды</option>
+              <option value="19">19 — Антисептики и дезинфицирующие средства</option>
+              <option value="27">27 — Игры и игрушки для детей</option>
+              <option value="28">28 — Радиоэлектронная продукция</option>
+              <option value="31">31 — Титановая металлопродукция</option>
+              <option value="34">34 — Оптоволокно</option>
+              <option value="35">35 — Косметика, бытовая химия</option>
+              <option value="36">36 — Печатная продукция</option>
+              <option value="39">39 — Строительные материалы</option>
+              <option value="40">40 — Пиротехника и огнетушащее оборудование</option>
+              <option value="41">41 — Отопительные приборы</option>
+              <option value="42">42 — Кабельно-проводниковая продукция</option>
+              <option value="43">43 — Моторные масла</option>
+              <option value="44">44 — Полимерные трубы</option>
+              <option value="48">48 — Автозапчасти</option>
+              <option value="51">51 — Ноутбуки и смартфоны</option>
+              <option value="53">53 — Удобрения</option>
+              <option value="54">54 — Товары для дома и интерьера</option>
+              <option value="59">59 — Пиротехнические изделия</option>
+            </select>
           </div>
         </div>
         <div class="mb-3">

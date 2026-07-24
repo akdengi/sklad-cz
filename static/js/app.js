@@ -191,6 +191,35 @@ function toast(msg, type = 'info') {
   new bootstrap.Toast(el, { delay: 2500 }).show();
 }
 
+async function loadBalance() {
+  const btn = document.getElementById('balance-refresh-btn');
+  const statusEl = document.getElementById('balance-status');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Загрузка...';
+  statusEl.textContent = '';
+  try {
+    const r = await api('/api/balance');
+    if (r.ok) {
+      document.getElementById('balance-pg-name').textContent = r.product_group_name || `Группа ${r.product_group_id}`;
+      document.getElementById('balance-amount').textContent = r.balance ? (r.balance / 100).toLocaleString('ru-RU', {minimumFractionDigits: 2}) + ' ₽' : '0 ₽';
+      document.getElementById('balance-contract').textContent = r.contract_id || '—';
+      document.getElementById('balance-org').textContent = r.organisation_id || '—';
+      statusEl.textContent = 'Обновлено: ' + new Date().toLocaleTimeString('ru-RU');
+    } else {
+      document.getElementById('balance-amount').textContent = 'Ошибка';
+      document.getElementById('balance-contract').textContent = '—';
+      document.getElementById('balance-org').textContent = '—';
+      document.getElementById('balance-pg-name').textContent = '—';
+      statusEl.innerHTML = '<span class="text-danger">' + esc(r.error || 'Неизвестная ошибка') + '</span>';
+    }
+  } catch (e) {
+    document.getElementById('balance-amount').textContent = 'Ошибка';
+    statusEl.innerHTML = '<span class="text-danger">' + esc(e.message) + '</span>';
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Обновить баланс';
+}
+
 function fmtDate(d) {
   if (!d) return '';
   const [y, m, dd] = d.split('-');
@@ -336,13 +365,9 @@ async function renderDashboard() {
     { num: data.sold_total_price ? data.sold_total_price.toFixed(0) + ' ₽' : '0 ₽', lbl: 'Сумма продаж', icon: 'bi-cash', color: 'success' },
     { num: data.disposal_ready, lbl: 'Готовы к выводу', icon: 'bi-arrow-up-right', color: 'info' },
     { num: data.disposal_sent, lbl: 'Подтверждено в ЧЗ', icon: 'bi-check-circle', color: 'success' },
-    { num: data.warehouses, lbl: 'Складов', icon: 'bi-building', color: 'secondary' },
   ];
   stats.forEach(s => {
     html += `<div class="col"><div class="card stat-card"><div class="num text-${s.color}">${s.num}</div><div class="lbl"><i class="bi ${s.icon}"></i> ${s.lbl}</div></div></div>`;
-  });
-  data.by_warehouse.forEach(w => {
-    html += `<div class="col"><div class="card stat-card"><div class="num">${w.count}</div><div class="lbl">${esc(w.name)}</div></div></div>`;
   });
   document.getElementById('summary').innerHTML = html;
 
@@ -373,7 +398,7 @@ async function renderDashboard() {
   if (data.by_sku && data.by_sku.length > 0) {
     const totals = data.by_sku.filter(s => s.warehouse_name === '_TOTAL_');
     if (totals.length > 0) {
-      let skuHtml = '<div class="card mt-3"><div class="card-body"><h6 class="card-title mb-3"><i class="bi bi-bar-chart"></i> Остатки по товарам</h6><div class="table-responsive"><table class="table table-sm table-hover mb-0" id="sku-dashboard-table"><thead class="table-light"><tr><th>Товар</th><th>Артикул</th><th>ЧЗ</th><th>На складе</th><th>Промарк.</th><th>Продано</th><th>Сумма продаж</th><th>На выводе</th><th>Тираж</th></tr></thead><tbody>';
+      let skuHtml = '<div class="card mt-3"><div class="card-body"><h6 class="card-title mb-3"><i class="bi bi-bar-chart"></i> Остатки по товарам</h6><div class="table-responsive"><table class="table table-sm table-hover mb-0" id="sku-dashboard-table"><thead class="table-light"><tr><th>Товар</th><th>Артикул</th><th>ЧЗ</th><th>На складах</th><th>Промарк.</th><th>Продано</th><th>Сумма продаж</th><th>На выводе</th><th>Тираж</th></tr></thead><tbody>';
       totals.forEach(s => {
         const pct = s.edition_total > 0 ? Math.round(s.marked * 100 / s.edition_total) : 0;
         skuHtml += `<tr>
@@ -409,6 +434,7 @@ async function renderDashboard() {
       <td><button class="btn btn-outline-primary btn-sm" onclick="showUnitDetail(${u.id})"><i class="bi bi-info-circle"></i></button></td>
     </tr>
   `).join('') || '<tr><td colspan="9" class="text-center text-muted">Нет данных</td></tr>';
+  loadBalance();
 }
 
 async function renderWarehouses() {
@@ -2074,6 +2100,7 @@ async function loadCZSettings() {
     document.getElementById('cz-api-url').value = s.cz_api_url || '';
     document.getElementById('cz-inn').value = s.cz_inn || '';
     document.getElementById('cz-key-pin').value = s.cz_key_pin || '';
+    document.getElementById('product-group').value = s.product_group || '27';
     const url = s.cz_api_url || '';
     const sel = document.getElementById('cz-api-url-select');
     if (sel) {
@@ -2084,10 +2111,40 @@ async function loadCZSettings() {
   } catch (e) {}
 }
 
+async function fetchMOD() {
+  const btn = document.getElementById('mod-fetch-btn');
+  const warning = document.getElementById('mod-warning');
+  const addrEl = document.getElementById('cz-default-address');
+  const fiasEl = document.getElementById('cz-default-fias');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Загрузка...';
+  warning.classList.add('d-none');
+  try {
+    const r = await api('/api/mod');
+    if (r.ok) {
+      addrEl.value = r.address || '';
+      fiasEl.value = r.fias_id || '';
+      toast('МОД загружена: ' + r.address, 'success');
+    } else if (r.error === 'not_found') {
+      addrEl.value = '';
+      fiasEl.value = '';
+      warning.innerHTML = '<i class="bi bi-exclamation-triangle"></i> ' + esc(r.message);
+      warning.classList.remove('d-none');
+    } else {
+      toast(r.error || 'Ошибка загрузки МОД', 'error');
+    }
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="bi bi-cloud-download"></i> Получить данные МОД из ЧЗ';
+}
+
 async function saveCZSettings() {
   const data = {
     default_disposal_address: document.getElementById('cz-default-address').value.trim(),
     default_disposal_fias_id: document.getElementById('cz-default-fias').value.trim(),
+    product_group: document.getElementById('product-group').value,
   };
   try {
     await api('/api/settings/cz', { method: 'POST', body: JSON.stringify(data) });
