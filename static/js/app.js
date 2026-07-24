@@ -307,7 +307,13 @@ async function globalSearch(e) {
         toast(`Найдена единица #${data.unit.id}`, 'success');
       }, 200);
     } else {
-      toast('Товар с таким кодом ЧЗ не найден', 'error');
+      const isGtinOrEan = /^\d{13,14}$/.test(code.replace(/\s/g, ''));
+      const isArticle = /^\w{2,20}$/.test(code.replace(/\s/g, '')) && !isGtinOrEan;
+      if (isGtinOrEan || isArticle) {
+        toast('Товар не найден. Если товар подлежит маркировке — ищите его по коду маркировки (КМ)', 'error');
+      } else {
+        toast('Товар с таким кодом ЧЗ не найден', 'error');
+      }
     }
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -410,24 +416,49 @@ async function renderWarehouses() {
   cachedWarehouses = list;
   const el = document.getElementById('warehouse-list');
   if (!list.length) { el.innerHTML = '<p class="text-muted">Складов пока нет</p>'; return; }
-  el.innerHTML = `<table class="table table-hover align-middle mb-0">
-    <thead class="table-light"><tr><th>Название</th><th>Тип</th><th>На складе</th><th>Продано</th><th></th></tr></thead>
-    <tbody>${list.map(w => {
-      const skuLines = (w.sku_breakdown || []).map(s =>
-        `<div class="small text-muted">${esc(s.sku_name)}: <span class="text-success">${s.in_stock}</span> / <span class="text-warning">${s.sold}</span></div>`
-      ).join('');
-      return `
-      <tr>
-        <td><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${esc(w.color || '#6c757d')};margin-right:6px;vertical-align:middle"></span><strong>${esc(w.name)}</strong>${skuLines ? `<div class="mt-1">${skuLines}</div>` : ''}</td>
-        <td><span class="badge ${w.wh_type === 'virtual' ? 'bg-info' : 'bg-secondary'}">${w.wh_type === 'virtual' ? 'Виртуальный' : 'Физический'}</span></td>
-        <td><span class="badge bg-success">${w.in_stock}</span></td>
-        <td><span class="badge bg-warning text-dark">${w.sold}</span></td>
-        <td class="text-end">
-          <button class="btn btn-sm btn-outline-primary me-1" onclick="openWarehouseModal(${w.id}, '${esc(w.name).replace(/'/g, "\\'")}', '${w.wh_type}', '${esc(w.color || '')}')" title="Изменить"><i class="bi bi-pencil"></i></button>
-          <button class="btn btn-sm btn-outline-danger" onclick="deleteWarehouse(${w.id}, '${esc(w.name)}')" title="Удалить"><i class="bi bi-trash"></i></button>
-        </td>
-      </tr>`;
-    }).join('')}</tbody></table>`;
+
+  let html = '';
+  list.forEach(w => {
+    const skuRows = (w.sku_breakdown || []).filter(s => (s.in_stock || 0) + (s.sold || 0) > 0);
+    html += `
+    <div class="card mb-3">
+      <div class="card-body py-3">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <div>
+            <span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:${esc(w.color || '#6c757d')};margin-right:8px;vertical-align:middle"></span>
+            <strong class="fs-5">${esc(w.name)}</strong>
+            <span class="badge ${w.wh_type === 'virtual' ? 'bg-info' : 'bg-secondary'} ms-2" style="font-size:13px">${w.wh_type === 'virtual' ? 'Виртуальный' : 'Физический'}</span>
+          </div>
+          <div class="text-end">
+            <button class="btn btn-sm btn-outline-primary me-1" onclick="openWarehouseModal(${w.id}, '${esc(w.name).replace(/'/g, "\\'")}', '${w.wh_type}', '${esc(w.color || '')}')" title="Изменить"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteWarehouse(${w.id}, '${esc(w.name)}')" title="Удалить"><i class="bi bi-trash"></i></button>
+          </div>
+        </div>
+        ${skuRows.length > 0 ? `
+        <div class="table-responsive">
+          <table class="table table-sm table-borderless mb-0" style="font-size:15px">
+            <thead>
+              <tr class="text-muted" style="font-size:13px;text-transform:uppercase;letter-spacing:.5px">
+                <th style="width:50%">Товар</th>
+                <th class="text-center" style="width:25%">Остаток</th>
+                <th class="text-center" style="width:25%">Продано</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${skuRows.map(s => `
+                <tr>
+                  <td><strong style="font-size:15px">${esc(s.sku_name)}</strong></td>
+                  <td class="text-center"><span class="badge bg-success bg-opacity-10 text-success" style="font-size:14px">${s.in_stock}</span></td>
+                  <td class="text-center"><span class="badge bg-warning bg-opacity-10 text-warning" style="font-size:14px">${s.sold}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>` : '<div class="text-muted small">Нет товаров</div>'}
+      </div>
+    </div>`;
+  });
+  el.innerHTML = html;
 }
 
 async function addWarehouse() {
@@ -689,17 +720,59 @@ async function processScan() {
     const r = await api('/api/units/scan', { method: 'POST', body: JSON.stringify({ cz_code: cz, sku_id: skuId, warehouse_id: warehouseId, status }) });
     scanCount++;
     document.getElementById('scan-counter').textContent = scanCount;
-    let resultHtml = `<div class="alert alert-success"><i class="bi bi-check-circle"></i> Код привязан к единице #${r.unit_id} (${esc(r.sku_name)})</div>`;
+
+    let resultHtml = '';
+
+    // Предупреждение о смене SKU
+    if (r.sku_switched) {
+      const warningMsg = r.sku_warning || r.sku_info || '';
+      resultHtml += `<div class="alert alert-warning mt-2"><i class="bi bi-arrow-left-right"></i> <strong>${esc(warningMsg)}</strong></div>`;
+    }
+
+    // Результат привязки
+    const createdLabel = r.created ? ' (создана)' : '';
+    resultHtml += `<div class="alert alert-success"><i class="bi bi-check-circle"></i> Код привязан к единице #${r.unit_id} (${esc(r.sku_name)})${createdLabel}</div>`;
+
+    // Оффлайн-валидация
     if (r.validation && !r.validation.valid) {
       resultHtml += `<div class="alert alert-warning mt-2"><i class="bi bi-exclamation-triangle"></i> <strong>Оффлайн-валидация:</strong><ul class="mb-0 mt-1">${r.validation.warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul></div>`;
     }
+
+    // Результат онлайн-проверки ЧЗ
+    if (r.cz_online) {
+      if (r.cz_online.ok) {
+        const czStatusMap = {'EMITTED':'Эмитирован','APPLIED':'Нанесён','INTRODUCED':'В обороте','INTRODUCED_RETURNED':'Возвращён в оборот','RETIRED':'Выбыл','WITHDRAWN':'Выбыл','WRITTEN_OFF':'Списан','REAPPLY':'Повторное нанесение','BLOCKED':'Заблокирован'};
+        const statusName = czStatusMap[r.cz_online.cz_status] || r.cz_online.cz_status;
+        resultHtml += `<div class="alert alert-info mt-2"><i class="bi bi-check-circle"></i> <strong>Статус ЧЗ:</strong> ${esc(statusName)}</div>`;
+      } else {
+        resultHtml += `<div class="alert alert-danger mt-2"><i class="bi bi-x-circle"></i> <strong>Ошибка проверки ЧЗ:</strong> ${esc(r.cz_online.error || 'Неизвестная ошибка')}</div>`;
+      }
+    }
+
     resultDiv.innerHTML = resultHtml;
-    let histClass = (r.validation && !r.validation.valid) ? 'text-warning' : 'text-success';
-    historyDiv.innerHTML = `<div class="scan-history-item ${histClass}">#${scanCount} &rarr; Ед. #${r.unit_id}${(r.validation && !r.validation.valid) ? ' ⚠' : ''}</div>` + historyDiv.innerHTML;
+
+    let histClass = 'text-success';
+    if (r.cz_online && !r.cz_online.ok) histClass = 'text-danger';
+    else if (r.validation && !r.validation.valid) histClass = 'text-warning';
+    else if (r.sku_switched) histClass = 'text-info';
+
+    historyDiv.innerHTML = `<div class="scan-history-item ${histClass}">#${scanCount} &rarr; Ед. #${r.unit_id}${r.sku_switched ? ' ⚡' : ''}${(r.cz_online && !r.cz_online.ok) ? ' ✗' : (r.validation && !r.validation.valid) ? ' ⚠' : ''}</div>` + historyDiv.innerHTML;
+
     document.getElementById('scan-cz').value = '';
     document.getElementById('scan-cz').focus();
-    if (r.validation && !r.validation.valid) {
+
+    // Обновляем селект SKU если был сменён
+    if (r.sku_switched && r.sku_id) {
+      document.getElementById('scan-sku').value = r.sku_id;
+    }
+
+    // Toast-уведомления
+    if (r.cz_online && !r.cz_online.ok) {
+      toast(`Код привязан, но ошибка проверки ЧЗ: ${r.cz_online.error || 'Неизвестная ошибка'}`, 'error');
+    } else if (r.validation && !r.validation.valid) {
       toast(`Код привязан, но есть предупреждения оффлайн-валидации`, 'warning');
+    } else if (r.sku_switched) {
+      toast(`Код привязан к другому SKU (GTIN не совпадал)`, 'warning');
     } else {
       toast(`Отсканировано: ${scanCount}`, 'success');
     }
@@ -916,7 +989,7 @@ async function czCheckFromEdit() {
 
 function extractShortCZ(code) {
   if (!code) return code;
-  const clean = code.replace(/[\s']/g, '');
+  const clean = code.replace(/\s/g, '');
   const idx = clean.indexOf('91');
   if (idx > 0) return clean.substring(0, idx);
   return clean;
@@ -1152,7 +1225,13 @@ function previewAddCode() {
       const searchCode = stripCZCrypto(code);
       const data = await api(`/api/units/find-by-code?code=${encodeURIComponent(searchCode)}`);
       if (!data.found) {
-        el.innerHTML = '<div class="alert alert-warning py-2">Товар не найден</div>';
+        const isGtinOrEan = /^\d{13,14}$/.test(code.replace(/\s/g, ''));
+        const isArticle = /^\w{2,20}$/.test(code.replace(/\s/g, '')) && !isGtinOrEan;
+        if (isGtinOrEan || isArticle) {
+          el.innerHTML = '<div class="alert alert-warning py-2"><i class="bi bi-exclamation-triangle"></i> <strong>Товар не найден.</strong> Если товар подлежит маркировке — ищите его по <strong>коду маркировки (КМ)</strong>, а не по GTIN/Артикулу/EAN.</div>';
+        } else {
+          el.innerHTML = '<div class="alert alert-warning py-2">Товар не найден</div>';
+        }
         return;
       }
       const u = data.unit;
@@ -1208,7 +1287,13 @@ async function addToCart() {
     const searchCode = stripCZCrypto(code);
     const data = await api(`/api/units/find-by-code?code=${encodeURIComponent(searchCode)}`);
     if (!data.found) {
-      statusEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0 small">Товар не найден</div>';
+      const isGtinOrEan = /^\d{13,14}$/.test(code.replace(/\s/g, ''));
+      const isArticle = /^\w{2,20}$/.test(code.replace(/\s/g, '')) && !isGtinOrEan;
+      if (isGtinOrEan || isArticle) {
+        statusEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0 small"><i class="bi bi-exclamation-triangle"></i> Товар не найден. Если товар подлежит маркировке — ищите его по <strong>коду маркировки (КМ)</strong>, а не по GTIN/Артикулу/EAN.</div>';
+      } else {
+        statusEl.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0 small">Товар не найден</div>';
+      }
       return;
     }
     const u = data.unit;
@@ -1390,7 +1475,13 @@ function findUnitByCode() {
   const searchCode = stripCZCrypto(code);
   api(`/api/units/find-by-code?code=${encodeURIComponent(searchCode)}`).then(data => {
     if (!data.found) {
-      resultDiv.innerHTML = '<div class="alert alert-warning py-2">Товар не найден</div>';
+      const isGtinOrEan = /^\d{13,14}$/.test(code.replace(/\s/g, ''));
+      const isArticle = /^\w{2,20}$/.test(code.replace(/\s/g, '')) && !isGtinOrEan;
+      if (isGtinOrEan || isArticle) {
+        resultDiv.innerHTML = '<div class="alert alert-warning py-2"><i class="bi bi-exclamation-triangle"></i> <strong>Товар не найден.</strong> Если товар подлежит маркировке — ищите его по <strong>коду маркировки (КМ)</strong>, а не по GTIN/Артикулу/EAN.</div>';
+      } else {
+        resultDiv.innerHTML = '<div class="alert alert-warning py-2">Товар не найден</div>';
+      }
       return;
     }
     const u = data.unit;
@@ -1706,24 +1797,89 @@ async function importCSV() {
   const status = parseInt(document.getElementById('imp-status').value);
   const fd = new FormData();
   fd.append('file', f); fd.append('sku_id', skuId); fd.append('warehouse_id', warehouseId); fd.append('status', status);
+
+  // Показываем индикатор загрузки
+  const logEl = document.getElementById('import-log');
+  logEl.classList.remove('d-none');
+  logEl.textContent = 'Импорт и проверка кодов...';
+
   try {
     const r = await fetch('/api/import/csv', { method: 'POST', body: fd });
     const data = await r.json();
     let logText = `CSV: ${data.added} добавлено | ${data.assigned || 0} привязано | ${data.duplicates} дубликатов | ${data.errors || 0} ошибок`;
-    if (data.total_warnings > 0) {
-      logText += ` | ${data.total_warnings} предупреждений оффлайн-валидации`;
+    if (data.total_errors > 0) {
+      logText += ` | ${data.total_errors} ошибок`;
     }
     showImportLog(logText);
-    if (data.validation_warnings && data.validation_warnings.length > 0) {
-      let warnHtml = `<div class="alert alert-warning mt-2"><i class="bi bi-exclamation-triangle"></i> <strong>Оффлайн-валидация — коды с предупреждениями:</strong><ul class="mb-0 mt-1" style="max-height:200px;overflow-y:auto">`;
-      data.validation_warnings.forEach(w => {
-        warnHtml += `<li><code>${esc(w.code)}</code><ul class="mb-0">${w.warnings.map(x => `<li class="text-muted small">${esc(x)}</li>`).join('')}</ul></li>`;
-      });
-      warnHtml += `</ul></div>`;
-      document.getElementById('import-log').insertAdjacentHTML('afterend', warnHtml);
+
+    // Показываем модальное окно с ошибками если они есть
+    if (data.import_errors && data.import_errors.length > 0) {
+      showImportErrorsModal(data.import_errors);
+      toast(`Импорт завершён с ${data.total_errors} ошибками`, 'warning');
+    } else {
+      render();
+      toast(`+${data.added + (data.assigned || 0)}`, 'success');
     }
-    render(); toast(`+${data.added + (data.assigned || 0)}`, 'success');
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    logEl.textContent = 'Ошибка импорта';
+    toast(e.message, 'error');
+  }
+}
+
+function showImportErrorsModal(errors) {
+  const tbody = document.querySelector('#import-errors-table tbody');
+  const summary = document.getElementById('import-errors-summary');
+
+  // Группировка по причинам
+  const groups = {};
+  errors.forEach(e => {
+    const key = e.reason || 'Неизвестно';
+    if (!groups[key]) groups[key] = 0;
+    groups[key]++;
+  });
+
+  let summaryHtml = `<div class="alert alert-warning mb-0"><strong>Найдено ${errors.length} ошибок:</strong> `;
+  summaryHtml += Object.entries(groups).map(([k, v]) => `<span class="badge bg-danger me-1">${k}: ${v}</span>`).join(' ');
+  summaryHtml += `</div>`;
+  summary.innerHTML = summaryHtml;
+
+  tbody.innerHTML = errors.map((e, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td><code class="small">${esc(e.code || '—')}</code></td>
+      <td><span class="badge bg-danger">${esc(e.reason || '—')}</span></td>
+      <td class="small text-muted">${esc(e.reason_detail || '—')}</td>
+    </tr>
+  `).join('');
+
+  // Сохраняем данные для скачивания CSV
+  window._importErrorsData = errors;
+
+  new bootstrap.Modal(document.getElementById('import-errors-modal')).show();
+}
+
+function downloadImportErrorsCSV() {
+  const errors = window._importErrorsData || [];
+  if (!errors.length) return;
+
+  // BOM для корректного открытия в Excel
+  let csv = '\ufeff';
+  csv += 'Код КМ;Причина;Подробности\n';
+  errors.forEach(e => {
+    const code = (e.code || '').replace(/"/g, '""');
+    const reason = (e.reason || '').replace(/"/g, '""');
+    const detail = (e.reason_detail || '').replace(/"/g, '""');
+    csv += `"${code}";"${reason}";"${detail}"\n`;
+  });
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `import_errors_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('CSV с ошибками скачан', 'success');
 }
 
 function showImportLog(text) {

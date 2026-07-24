@@ -5,7 +5,7 @@ from sqlalchemy import select, or_, exc
 from sqlalchemy.orm import joinedload
 from app import db
 from app.models import Unit, SKU, Warehouse
-from app.utils import normalize_cz, find_duplicate_unit, find_first_unmarked_unit, cz_search_prefix, validate_cz_code, cz_to_gs1_parenthesized, FNC1, STATUSES
+from app.utils import normalize_cz, find_duplicate_unit, find_first_unmarked_unit, cz_search_prefix, validate_cz_code, cz_to_gs1_parenthesized, extract_gtin_from_cz, FNC1, STATUSES
 
 units_bp = Blueprint("units", __name__)
 
@@ -125,13 +125,33 @@ def find_by_code():
         return jsonify({"found": False})
     code = normalize_cz(raw_code)
     prefix = cz_search_prefix(code)
+    is_likely_cz = len(raw_code) > 20 or "\xe8" in raw_code or "\u001d" in raw_code or "\u241d" in raw_code
     unit = Unit.query.options(
         joinedload(Unit.sku), joinedload(Unit.warehouse)
     ).filter(Unit.cz_code.like(f"{prefix}%")).first()
+    if unit and not is_likely_cz and unit.sku and unit.sku.has_marking:
+        unit = None
     if not unit:
         unit = Unit.query.options(
             joinedload(Unit.sku), joinedload(Unit.warehouse)
         ).filter(Unit.cz_code.like(f"%{code}%")).first()
+        if unit and not is_likely_cz and unit.sku and unit.sku.has_marking:
+            unit = None
+    # Поиск по исходной строке (до нормализации) — как в get_units
+    # Для товаров с маркировкой: только если исходная строка похожа на КМ (содержит FNC1/GS или длинная)
+    if not unit:
+        is_likely_cz = len(raw_code) > 20 or "\xe8" in raw_code or "\u001d" in raw_code
+        unit = Unit.query.options(
+            joinedload(Unit.sku), joinedload(Unit.warehouse)
+        ).filter(Unit.cz_code.like(f"%{raw_code}%")).first()
+        if unit and not is_likely_cz and unit.sku and unit.sku.has_marking:
+            unit = None
+    # Поиск по ID единицы
+    if not unit and raw_code.lstrip('#').isdigit():
+        uid = int(raw_code.lstrip('#'))
+        unit = Unit.query.options(
+            joinedload(Unit.sku), joinedload(Unit.warehouse)
+        ).filter(Unit.id == uid).first()
     # Поиск по EAN13 (товары без маркировки)
     if not unit:
         ean = raw_code.strip()
@@ -429,8 +449,31 @@ def scan_unit():
     if existing:
         abort(409, f"Код уже существует в единице #{existing.id}")
 
-    # Валидация кода ЧЗ (с проверкой GTIN карточки)
+    # Проверка GTIN: извлекаем GTIN из КМ и сравниваем с выбранным SKU
+    cz_gtin = extract_gtin_from_cz(cz_code)
     sku = SKU.query.get(sku_id)
+    sku_matched = True
+    sku_switched = False
+    if cz_gtin and sku and sku.gtin14 and cz_gtin != sku.gtin14.strip():
+        # GTIN в КМ не совпадает с выбранным SKU — ищем SKU с подходящим GTIN
+        target_sku = SKU.query.filter(SKU.gtin14 == cz_gtin).first()
+        if target_sku:
+            sku = target_sku
+            sku_id = target_sku.id
+            sku_switched = True
+            sku_matched = False
+        else:
+            # Нет SKU с таким GTIN — ошибка
+            abort(400, f"КМ относится к товару с GTIN {cz_gtin}, но такого SKU нет в базе данных. Добавление невозможно.")
+    elif cz_gtin and sku and not sku.gtin14:
+        # У SKU нет GTIN, но КМ содержит GTIN — предупреждаем, но продолжаем
+        target_sku = SKU.query.filter(SKU.gtin14 == cz_gtin).first()
+        if target_sku:
+            sku = target_sku
+            sku_id = target_sku.id
+            sku_switched = True
+            sku_matched = False
+
     sku_gtin14 = sku.gtin14 if sku else None
     validation = validate_cz_code(cz_code, sku_gtin14=sku_gtin14)
 
@@ -448,24 +491,68 @@ def scan_unit():
             )
             db.session.add(unit)
             db.session.commit()
-            return jsonify({
-                "unit_id": unit.id,
-                "sku_name": unit.sku.name if unit.sku else None,
-                "created": True,
-                "validation": validation,
-            })
+    else:
+        unit.cz_code = cz_code
+        unit.cz_offline_valid = validation["valid"]
+        unit.status = status
+        unit.updated_at = datetime.utcnow()
+        db.session.commit()
 
-    unit.cz_code = cz_code
-    unit.cz_offline_valid = validation["valid"]
-    unit.status = status
-    unit.updated_at = datetime.utcnow()
-    db.session.commit()
-    return jsonify({
+    # Онлайн-проверка статуса ЧЗ сразу после добавления
+    cz_online_result = None
+    try:
+        from app.cz_api import check_cz_status
+        cz_result = check_cz_status([cz_code])
+        cz_results_list = cz_result.get("results", [])
+        if cz_results_list:
+            entry = cz_results_list[0]
+            info = entry.get("cisInfo", entry)
+            error_code = entry.get("errorCode", "")
+            error_msg = entry.get("errorMessage", "")
+            if error_code and error_code != "0":
+                cz_online_result = {"ok": False, "error": f"{error_msg} (код {error_code})"}
+                unit.cz_check_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+                unit.cz_status = None
+            else:
+                cz_status_raw = info.get("status") or info.get("cisStatus") or ""
+                unit.cz_status = cz_status_raw
+                unit.cz_check_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+                new_status_val = None
+                _CZ_TO_UNIT_STATUS = {
+                    'EMITTED': 1, 'APPLIED': 2, 'INTRODUCED': 3, 'INTRODUCED_RETURNED': 3,
+                    'RETIRED': 5, 'WITHDRAWN': 5, 'WRITTEN_OFF': 5,
+                }
+                new_status_val = _CZ_TO_UNIT_STATUS.get(cz_status_raw)
+                if new_status_val is not None and new_status_val > unit.status:
+                    unit.status = new_status_val
+                if cz_status_raw in ('RETIRED', 'WITHDRAWN', 'WRITTEN_OFF'):
+                    unit.disposal_status = 1
+                cz_online_result = {"ok": True, "cz_status": cz_status_raw}
+        else:
+            cz_online_result = {"ok": False, "error": "Код не найден в ЧЗ"}
+            unit.cz_check_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+            unit.cz_status = None
+        db.session.commit()
+    except Exception as e:
+        cz_online_result = {"ok": False, "error": f"Ошибка проверки ЧЗ: {str(e)}"}
+
+    result = {
         "unit_id": unit.id,
         "sku_name": unit.sku.name if unit.sku else None,
-        "created": False,
+        "sku_id": unit.sku_id,
+        "created": unit.status == status and not unit.updated_at or unit.updated_at == unit.created_at,
         "validation": validation,
-    })
+        "cz_online": cz_online_result,
+    }
+    if not sku_matched:
+        result["sku_switched"] = True
+        result["original_sku_id"] = int(data.get("sku_id") or 0)
+        result["sku_warning"] = f"GTIN в КМ ({cz_gtin}) не совпадает с выбранным SKU. Код привязан к SKU «{sku.name}» (GTIN {cz_gtin})"
+    elif sku_switched:
+        result["sku_switched"] = True
+        result["original_sku_id"] = int(data.get("sku_id") or 0)
+        result["sku_info"] = f"Код привязан к SKU «{sku.name}» (GTIN {cz_gtin})"
+    return result
 
 
 @units_bp.route("/quick-sell", methods=["POST"])

@@ -764,6 +764,39 @@ body { background: #f0f2f5; }
 </div>
 
 
+<!-- ===== IMPORT ERRORS MODAL ===== -->
+<div class="modal fade" id="import-errors-modal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header bg-warning text-dark">
+        <h5 class="modal-title"><i class="bi bi-exclamation-triangle"></i> Ошибки импорта</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="import-errors-summary" class="mb-3"></div>
+        <div class="table-responsive" style="max-height:400px;overflow-y:auto">
+          <table class="table table-sm table-hover" id="import-errors-table">
+            <thead class="table-light sticky-top">
+              <tr>
+                <th>#</th>
+                <th>Код КМ</th>
+                <th>Причина</th>
+                <th>Подробности</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+        <button type="button" class="btn btn-outline-primary" onclick="downloadImportErrorsCSV()"><i class="bi bi-download"></i> Скачать CSV</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <!-- Toast -->
 <div class="toast-container position-fixed bottom-0 end-0 p-3">
   <div id="appToast" class="toast" role="alert"><div class="toast-body"></div></div>

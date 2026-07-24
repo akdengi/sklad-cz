@@ -120,6 +120,20 @@ def cz_to_gs1_raw(cz_code: str) -> str:
     return code_body
 
 
+def extract_gtin_from_cz(cz_code: str) -> str:
+    """Извлечь GTIN-14 из кода ЧЗ (AI 01)."""
+    if not cz_code:
+        return ""
+    code = normalize_cz(cz_code)
+    code_body = code.replace(FNC1, "")
+    idx = code_body.find("01")
+    if idx == 0 and len(code_body) >= 16:
+        gtin = code_body[2:16]
+        if len(gtin) == 14 and gtin.isdigit():
+            return gtin
+    return ""
+
+
 def cz_to_datamatrix_data(cz_code: str) -> str:
     code = normalize_cz(cz_code)
     code = code.replace(FNC1, '^FNC1')
