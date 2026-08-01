@@ -79,6 +79,7 @@ def get_units():
             or_(
                 Unit.cz_code.like(f"{FNC1}{search_prefix}%"),
                 Unit.cz_code.like(f"{search_prefix}%"),
+                Unit.cz_code.like(f"%{norm_q}%"),
                 Unit.cz_code.like(f"%{raw_q}%"),
                 Unit.order_number.ilike(term),
                 SKU.name.ilike(term),
@@ -214,6 +215,8 @@ def get_sold_units():
         q = q.join(SKU).filter(
             or_(
                 Unit.cz_code.like(f"{FNC1}{search_prefix}%"),
+                Unit.cz_code.like(f"{search_prefix}%"),
+                Unit.cz_code.like(f"%{norm_q}%"),
                 Unit.cz_code.like(f"%{raw_q}%"),
                 Unit.order_number.ilike(term),
                 SKU.name.ilike(term),
@@ -367,6 +370,7 @@ def get_disposal_units():
             or_(
                 Unit.cz_code.like(f"{FNC1}{search_prefix}%"),
                 Unit.cz_code.like(f"{search_prefix}%"),
+                Unit.cz_code.like(f"%{norm_q}%"),
                 Unit.cz_code.like(f"%{raw_q}%"),
                 Unit.order_number.ilike(term),
                 SKU.name.ilike(term),

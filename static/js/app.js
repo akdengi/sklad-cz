@@ -1489,6 +1489,15 @@ async function submitCart() {
   qsCart = [];
   renderCart();
   updateSubmitBtn();
+
+  // clear quick‑sell form inputs after successful sale
+  document.getElementById('qs-order').value = '';
+  document.getElementById('qs-sell-date').value = '';
+  document.getElementById('qs-doc-type').value = 'прочее';
+  document.getElementById('qs-add-code').value = '';
+  document.getElementById('qs-add-price').value = '';
+  document.getElementById('qs-add-status').innerHTML = '';
+
   btn.disabled = false;
   btn.innerHTML = '<i class="bi bi-lightning"></i> Продать';
   render();
