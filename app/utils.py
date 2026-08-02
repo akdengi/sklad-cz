@@ -32,6 +32,7 @@ DISPOSAL_DOC_TYPES = [
 
 DISPOSAL_STATUSES = [
     "Не начато",
+    "Отправлено в ЧЗ",
     "Подтверждено ЧЗ",
 ]
 

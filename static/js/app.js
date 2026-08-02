@@ -35,7 +35,7 @@ const DISPOSAL_REASONS = {
   "market_recall":"Отзыв товара с рынка",
 };
 const DISPOSAL_REASONS_NO_DOCS = ["own_needs","production","gratuitous_transfer","loss","market_recall"];
-const DISPOSAL_STATUSES = ["Не начато","Подтверждено ЧЗ"];
+const DISPOSAL_STATUSES = ["Не начато","Отправлено в ЧЗ","Подтверждено ЧЗ"];
 
 let editingSkuId = null, editingUnitId = null;
 let czDuplicateCheckTimer = null;
@@ -2049,6 +2049,131 @@ async function exportDisposalCSV() {
   a.download = `disposal_${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   toast('CSV выбытия скачан', 'success');
+}
+
+let pendingDisposalIds = [];
+let pendingDisposalData = [];
+
+async function exportDisposalReport() {
+  const tab = 'disposal';
+  const ids = [...selectedUnits[tab]];
+  if (ids.length === 0) {
+    toast('Выберите единицы для вывода из оборота', 'warning');
+    return;
+  }
+
+  pendingDisposalIds = ids;
+
+  // Загружаем данные для предпросмотра
+  try {
+    const r = await api(`/api/cz/disposal-by-ids?ids=${ids.join(',')}`);
+    if (r && r.units) {
+      pendingDisposalData = r.units;
+      showDisposalPreview();
+    } else {
+      // Если API недоступен, показываем простое подтверждение
+      if (!confirm(`Создать документ вывода из оборота для ${ids.length} единиц?`)) return;
+      const toastId = toast(`Отправка документов...`, 'info', 0);
+      try {
+        const r2 = await api('/api/cz/receipt/create', {
+          method: 'POST',
+          body: JSON.stringify({ unit_ids: ids, document_format: 'MANUAL' })
+        });
+        
+        if (r2 && r2.success) {
+          toast(`Отправлено: ${r2.units_processed} единиц. Document ID: ${r2.document_id || 'N/A'}`, 'success');
+          renderDisposal();
+        } else {
+          const error = r2?.error_message || r2?.message || 'Ошибка при создании документа';
+          toast(error, 'error');
+        }
+      } catch (e) {
+        toast(`Ошибка: ${e.message}`, 'error');
+      }
+    }
+  } catch (e) {
+    if (!confirm(`Создать документ вывода из оборота для ${ids.length} единиц?\n\nПредпросмотр недоступен.`)) return;
+    try {
+      const r = await api('/api/cz/receipt/create', {
+        method: 'POST',
+        body: JSON.stringify({ unit_ids: ids, document_format: 'MANUAL' })
+      });
+      
+      if (r && r.success) {
+        toast(`Отправлено: ${r.units_processed} единиц. Document ID: ${r.document_id || 'N/A'}`, 'success');
+        renderDisposal();
+      } else {
+        const error = r?.error_message || r?.message || 'Ошибка при создании документа';
+        toast(error, 'error');
+      }
+    } catch (e) {
+      toast(`Ошибка: ${e.message}`, 'error');
+    }
+  }
+}
+ 
+function showDisposalPreview() {
+  if (!pendingDisposalData.length) return;
+  
+  document.getElementById('disposal-count').textContent = pendingDisposalData.length;
+  
+  const tbody = document.getElementById('disposal-preview-body');
+  tbody.innerHTML = '';
+  
+  let prevAddress = '';
+  pendingDisposalData.forEach(u => {
+    // Извлекаем КИ из полного кода (до GS)
+    const fullCz = u.cz_code || '';
+    const ki = fullCz ? (fullCz.split('\u001d')[0] || '').replace(/\xe8/, '') : '';
+    
+    tbody.innerHTML += `<tr>
+      <td class="font-monospace" style="max-width:250px" title="${esc(fullCz)}">${esc(ki)}</td>
+      <td>${(u.disposal_price || 0).toFixed(2)} ₽</td>
+      <td>${esc(u.disposal_doc_number || '')}</td>
+    </tr>`;
+    
+    // Запоминаем адрес (одинаковый для всех единиц)
+    if (!prevAddress && u.disposal_address) {
+      prevAddress = u.disposal_address;
+      document.getElementById('disposal-address').textContent = esc(u.disposal_address || '—');
+    }
+  });
+  
+  const modalEl = document.getElementById('disposal-confirm-modal');
+  new bootstrap.Modal(modalEl).show();
+}
+
+async function confirmDisposalSubmit() {
+  if (pendingDisposalIds.length === 0) return;
+  
+  const ids = pendingDisposalIds;
+  pendingDisposalIds = [];
+  pendingDisposalData = [];
+  
+  // Закрываем модальное окно
+  document.getElementById('disposal-confirm-modal').classList.remove('show');
+  document.body.style.overflow = '';
+  
+  const toastId = toast(`Отправка документов...`, 'info', 0);
+  try {
+    const r = await api('/api/cz/receipt/create', {
+      method: 'POST',
+      body: JSON.stringify({ unit_ids: ids, document_format: 'MANUAL' })
+    });
+    
+    if (r && r.success) {
+      toast(`Отправлено: ${r.units_processed} единиц. Document ID: ${r.document_id || 'N/A'}`, 'success');
+      renderDisposal();
+    } else {
+      const error = r?.error_message || r?.message || 'Ошибка при создании документа';
+      if (r?.document_status_info) {
+        error += `\nСтатус: ${JSON.stringify(r.document_status_info, null, 2)}`;
+      }
+      toast(error, 'error');
+    }
+  } catch (e) {
+    toast(`Ошибка: ${e.message}`, 'error');
+  }
 }
 
 function openDatePicker(textId) {

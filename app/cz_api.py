@@ -1,7 +1,11 @@
 import sys
 import os
 import requests
-from app.utils import load_settings
+import base64
+import json
+import logging
+from datetime import datetime
+from app.utils import load_settings, get_product_group_code
 from app.config import CZ_API_URL
 
 _uuid_token = None
@@ -114,7 +118,7 @@ def _sign_data_win(data_to_sign: str, thumbprint: str) -> str:
 
         sd = win32com.client.Dispatch("CAdESCOM.CadesSignedData")
         sd.ContentEncoding = 1
-        b64 = base64.b64encode(data_to_sign.encode("ascii")).decode("ascii")
+        b64 = base64.b64encode(data_to_sign.encode("utf-8")).decode("ascii")
         sd.Content = b64
 
         signature = sd.SignCades(signer, 1, False, 0)
@@ -382,3 +386,442 @@ def check_cz_status(cz_codes: list, thumbprint: str = None) -> dict:
                 raise
 
     return {"results": all_results}
+
+
+def check_document_status_by_id(
+    doc_id: str,
+    thumbprint: str = None,
+    pg: str = None
+) -> dict:
+    """
+    Получает информацию о документе из ГИС МТ по его ID.
+    
+    Args:
+        doc_id: Идентификатор документа (номер как в ответе создания)
+        thumbprint: Отпечаток сертификата ЭЦП
+        pg: Код товарной группы
+        
+    Returns:
+        dict: Результат с информацией о документе или ошибкой
+    """
+    s = load_settings()
+    if not thumbprint:
+        thumbprint = s.get("cz_cert_thumbprint", "")
+    if not thumbprint:
+        raise Exception("Certificate thumbprint not set")
+    
+    # Получаем код товарной группы
+    if not pg:
+        product_group_id = s.get("product_group", "27")
+        pg = get_product_group_code(product_group_id)
+        if not pg:
+            raise Exception(f"Could not determine product group code for ID {product_group_id}")
+    
+    try:
+        token = get_uuid_token(thumbprint)
+    except:
+        reset_token()
+        token = get_uuid_token(thumbprint)
+    
+    base_url = _get_base_url()
+    
+    headers = {
+        "accept": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+    
+    url = f"{base_url}/doc/list"
+    
+    params = {
+        "pg": pg,
+        "number": doc_id,
+        "documentStatus": "",  # Получаем все статусы
+    }
+    
+    try:
+        r = requests.get(url, params=params, headers=headers, timeout=30)
+        
+        if r.status_code == 401:
+            reset_token()
+            token = get_uuid_token(thumbprint)
+            headers["Authorization"] = f"Bearer {token}"
+            r = requests.get(url, params=params, headers=headers, timeout=30)
+        
+        if r.status_code >= 400:
+            return {
+                "success": False,
+                "error_code": r.status_code,
+                "error_message": f"HTTP {r.status_code}: {r.text[:800]}"
+            }
+        
+        try:
+            result = r.json()
+            # Возвращаем первую запись из списка
+            documents = result.get("results", [])
+            if documents:
+                return {"success": True, "data": documents[0]}
+            else:
+                return {"success": False, "error_message": "Document not found"}
+        except Exception as e:
+            return {
+                "success": False,
+                "error_code": 0,
+                "error_message": f"Non-JSON response: {r.text[:500]}"
+            }
+            
+    except requests.exceptions.RequestException as e:
+        return {"success": False, "error_code": 0, "error_message": str(e)}
+
+
+# ===== Код для создания документов (LK_RECEIPT) =====
+
+# Типы документов для ввода/вывода по справочнику ЧЗ
+DOC_TYPE_LK_RECEIPT = 54       # LK_RECEIPT - Вывод из оборота (JSON)
+DOC_TYPE_LK_RECEIPT_XML = 49   # LK_RECEIPT_XML - Вывод из оборота (XML)
+DOC_TYPE_LK_RECEIPT_CSV = 52   # LK_RECEIPT_CSV - Вывод из оборота (CSV)
+DOC_TYPE_LK_RECEIPT_CANCEL = 236  # LK_RECEIPT_CANCEL - Отмена вывода из оборота
+
+# Типы универсальных документов
+DOC_TYPE_UNIVERSAL_TRANSFER_DOCUMENT = 1      # УПД
+DOC_TYPE_UNIVERSAL_CORRECTION_DOCUMENT = 7    # УКД
+DOC_TYPE_WRITE_OFF = 9                        # Списание
+DOC_TYPE_AGGREGATION = 2                      # Формирование упаковки
+
+# Доступные для разных товарных групп
+# АЛКОГОЛЬ и ПИВО: FIXATION (239), UNIVERSAL_TRANSFER_DOCUMENT (1, 10), 
+#                  UNIVERSAL_CORRECTION_DOCUMENT (7, 11)
+# ВЕТЕРИНАРНЫЕ ПРЕПАРАТЫ: UNIVERSAL_TRANSFER_DOCUMENT (1, 10),
+#                         UNIVERSAL_CORRECTION_DOCUMENT (7, 11)
+
+DOCUMENT_TYPE_CODES = {
+    "LK_RECEIPT": DOC_TYPE_LK_RECEIPT,
+    "LK_RECEIPT_XML": DOC_TYPE_LK_RECEIPT_XML,
+    "LK_RECEIPT_CSV": DOC_TYPE_LK_RECEIPT_CSV,
+    "LK_RECEIPT_CANCEL": DOC_TYPE_LK_RECEIPT_CANCEL,
+}
+
+
+def get_document_type_code(type_name: str) -> int:
+    """Получить числовой код типа документа по имени."""
+    return DOCUMENT_TYPE_CODES.get(type_name, 0)
+
+
+def export_units_for_disposal(units: list) -> dict:
+    """
+    Генерирует CSV-файл для экспорта данных о единицах, готовых к выводу из оборота.
+    
+    Args:
+        units: Список словарей с данными единиц (из Unit.to_dict())
+        
+    Returns:
+        dict: Результат с CSV-данными
+    """
+    import io
+    import csv
+    
+    buf = io.StringIO()
+    buf.write("\ufeff")
+    
+    w = csv.writer(buf, delimiter=";", lineterminator="\n")
+    w.writerow([
+        "ID", "Код ЧЗ (полный)", "Код для ввода в оборот", "SKU",
+        "Тип операции", "Причина выбытия",
+        "Вид первичного документа", "Наименование документа",
+        "Номер документа", "Дата документа",
+        "Адрес места выбытия", "Цена за единицу"
+    ])
+    
+    for u in units:
+        full = u.get("cz_code", "") or ""
+        turnover = full.split("\u001d")[0] if full else ""
+        
+        w.writerow([
+            u.get("id", ""),
+            full,
+            turnover,
+            u.get("sku_name", ""),
+            u.get("disposal_type", ""),
+            u.get("disposal_reason", ""),
+            u.get("disposal_doc_type", ""),
+            u.get("disposal_doc_name", ""),
+            u.get("disposal_doc_number", ""),
+            u.get("disposal_doc_date", ""),
+            u.get("disposal_address", ""),
+            u.get("disposal_price", "")
+        ])
+    
+    return {
+        "csv": buf.getvalue(),
+        "count": len(units)
+    }
+
+
+def create_receipt_document(
+    cz_codes: list,
+    thumbprint: str = None,
+    pg: str = None,
+    document_format: str = "MANUAL",
+    unit_data: dict = None
+) -> dict:
+    """
+    Создает документ LK_RECEIPT (вывод из оборота) для указанных кодов ЧЗ.
+    
+    Args:
+        cz_codes: Список кодов ЧЗ для вывода из оборота
+        thumbprint: Отпечаток сертификата ЭЦП
+        pg: Код товарной группы (например, 'toys', 'lp')
+        document_format: Формат документа ('MANUAL')
+        unit_data: Данные единицы для заполнения документа:
+            {
+                "disposal_type": "shipment",
+                "disposal_reason": "remote_sale",
+                "disposal_doc_type": "other",
+                "disposal_doc_name": "Заказ ...",
+                "disposal_doc_number": "...",
+                "disposal_doc_date": "2024-01-15",
+                "disposal_address": "...",
+                "disposal_fias_id": "...",
+                "disposal_price": 5504.0
+            }
+        
+    Returns:
+        dict: Результат с id документа或 сообщением об ошибке
+    """
+    s = load_settings()
+    if not thumbprint:
+        thumbprint = s.get("cz_cert_thumbprint", "")
+    if not thumbprint:
+        raise Exception("Certificate thumbprint not set")
+    
+    # Получаем код товарной группы
+    if not pg:
+        product_group_id = s.get("product_group", "27")
+        pg = get_product_group_code(product_group_id)
+        if not pg:
+            raise Exception(f"Could not determine product group code for ID {product_group_id}")
+    
+    token = get_uuid_token(thumbprint)
+    base_url = _get_base_url()
+    
+    # Формируем JSON документ (LK_RECEIPT)
+    inn = s.get("cz_inn", "")
+    fias_id = s.get("default_disposal_fias_id", "")
+    
+    action = "DISTANCE"
+    withdrawal_type_other = ""
+    document_type = "OTHER"
+    
+    logging.debug(f"Creating LK_RECEIPT with INN: {inn}, FIAS: {fias_id}")
+    
+    # Генерируем номер документа
+    doc_number = f"ВЫВОД-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    
+    from app.utils import GS, FNC1
+    
+    # Извлекаем КИ (без криптохвоста) из полных кодов ЧЗ
+    cis_codes = []
+    for code in cz_codes:
+        parts = code.split(GS)
+        first_part = parts[0] if parts else ""
+        cis_code = first_part.lstrip(FNC1)
+        cis_codes.append(cis_code)
+    
+    product_data = {
+        "inn": inn,
+        "action": action,
+        "action_date": datetime.utcnow().strftime("%Y-%m-%d"),
+        "withdrawal_type_other": withdrawal_type_other,
+        "document_type": document_type or (unit_data.get("disposal_doc_type") if unit_data else "OTHER"),
+        "document_number": (unit_data.get("disposal_doc_number") or "") if unit_data else doc_number,
+        "document_date": (unit_data.get("disposal_doc_date") or datetime.utcnow().strftime("%Y-%m-%d")) if unit_data else datetime.utcnow().strftime("%Y-%m-%d"),
+        "primary_document_custom_name": (unit_data.get("disposal_doc_name") or "") if unit_data else "",
+        "products": [
+            {"cis": code, "unit_price_in_kopeks": 0} for code in cis_codes
+        ]
+    }
+    
+    # Применяем данные из unit_data если есть
+    if unit_data:
+        doc_number_from_unit = unit_data.get("disposal_doc_number")
+        if doc_number_from_unit:
+            product_data["document_number"] = doc_number_from_unit
+        
+        doc_date_from_unit = unit_data.get("disposal_doc_date")
+        if doc_date_from_unit:
+            product_data["document_date"] = doc_date_from_unit
+        
+        doc_name_from_unit = unit_data.get("disposal_doc_name")
+        if doc_name_from_unit:
+            product_data["primary_document_custom_name"] = doc_name_from_unit
+    
+    # Добавляем fias_id если есть вunit_data или в настройках
+    fias_id_to_use = (unit_data or {}).get("disposal_fias_id") or fias_id
+    if fias_id_to_use:
+        product_data["fias_id"] = fias_id_to_use
+    
+    # Определяем цену - берем из unit_data или используем 0
+    price_kopeks = 0
+    if unit_data:
+        disposal_price = unit_data.get("disposal_price", 0)
+        if disposal_price and isinstance(disposal_price, (int, float)):
+            price_kopeks = int(disposal_price * 100)  # рубли в копейки
+    
+    # Обновляем products с ценой и другими полями
+    product_data["products"] = [
+        {
+            "cis": code,
+            "product_cost": price_kopeks,
+            "primary_document_type": document_type or (unit_data.get("disposal_doc_type") if unit_data else "OTHER"),
+            "primary_document_number": (unit_data or {}).get("disposal_doc_number") or "",
+            "primary_document_date": (unit_data or {}).get("disposal_doc_date") or datetime.utcnow().strftime("%Y-%m-%d"),
+            "primary_document_custom_name": (unit_data or {}).get("disposal_doc_name") or ""
+        } for code in cis_codes
+    ]
+    
+    doc_json = json.dumps(product_data, ensure_ascii=False, separators=(",", ":"))
+    
+    # Кодируем в base64 (product_document)
+    product_document_b64 = base64.b64encode(doc_json.encode("utf-8")).decode("ascii")
+    
+    # Подписываем исходный JSON документа
+    signature = _sign_data(doc_json, thumbprint)
+    
+    payload = {
+        "document_format": "MANUAL",
+        "product_document": product_document_b64,
+        "type": "LK_RECEIPT",
+        "signature": signature,
+    }
+    
+    url = f"{base_url}/lk/documents/create"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+        "accept": "application/json",
+    }
+    
+    # Отправляем запрос с pg как query параметром
+    r = requests.post(
+        url,
+        params={"pg": pg},
+        json=payload,
+        headers=headers,
+        timeout=60,
+    )
+    
+    if r.status_code == 401:
+        reset_token()
+        token = get_uuid_token(thumbprint)
+        headers["Authorization"] = f"Bearer {token}"
+        r = requests.post(
+            url,
+            params={"pg": pg},
+            json=payload,
+            headers=headers,
+            timeout=60,
+        )
+    
+    if r.status_code >= 400:
+        return {
+            "success": False,
+            "error_code": r.status_code,
+            "error_message": f"HTTP {r.status_code}: {r.text[:800]}"
+        }
+    
+    # Если ответ JSON, возвращаем данные
+    try:
+        result = r.json()
+        return {"success": True, "data": result}
+    except Exception as e:
+        # Ответ не JSON (например, просто UUID документа) - это может быть успех
+        msg = f"Non-JSON response (possibly document ID): {r.text[:200]}"
+        logging.debug(msg) if logging.root.level <= logging.DEBUG else None
+        if r.status_code in (200, 201):
+            return {
+                "success": True,
+                "data": {"document_id": r.text.strip()},
+                "raw_response": r.text[:500]
+            }
+        else:
+            return {
+                "success": False,
+                "error_code": r.status_code,
+                "error_message": f"HTTP {r.status_code}: {r.text[:500]}"
+            }
+
+
+def cancel_receipt_document(
+    document_id: str,
+    thumbprint: str = None,
+    pg: str = None
+) -> dict:
+    """
+    Отменяет документ LK_RECEIPT (вывод из оборота).
+    
+    Args:
+        document_id: ID документа, который нужно отменить
+        thumbprint: Отпечаток сертификата ЭЦП
+        pg: Код товарной группы
+        
+    Returns:
+        dict: Результат операции
+    """
+    if not thumbprint:
+        s = load_settings()
+        thumbprint = s.get("cz_cert_thumbprint", "")
+    if not thumbprint:
+        raise Exception("Certificate thumbprint not set. Configure in Settings > Chestny Znak.")
+    
+    # Получаем код товарной группы
+    if not pg:
+        s = load_settings()
+        product_group_id = s.get("product_group", "27")
+        pg = get_product_group_code(product_group_id)
+        if not pg:
+            raise Exception(f"Could not determine product group code for ID {product_group_id}")
+    
+    base_url = _get_base_url()
+    url = f"{base_url}/lk/documents/cancel?pg={pg}"
+    
+    headers = {
+        "Content-Type": "application/json",
+        "accept": "application/json",
+    }
+    
+    try:
+        # Получаем токен
+        token = get_uuid_token(thumbprint)
+        headers["Authorization"] = f"Bearer {token}"
+        
+        # Подписываем document_id
+        product_json = json.dumps({"documentId": document_id}, ensure_ascii=False)
+        product_b64 = base64.b64encode(product_json.encode("utf-8")).decode("ascii")
+        signature = _sign_data(product_json, thumbprint)
+        
+        payload = {
+            "document_format": "MANUAL",
+            "product_document": product_b64,
+            "type": get_document_type_code("LK_RECEIPT_CANCEL"),
+            "signature": signature,
+        }
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        
+        if response.status_code in (200, 201):
+            result = response.json()
+            return {"success": True, "data": result}
+        else:
+            error_msg = response.text
+            try:
+                err_json = response.json()
+                error_msg = err_json.get("error_message", error_msg)
+            except Exception:
+                pass
+            return {
+                "success": False,
+                "error_code": response.status_code,
+                "error_message": error_msg
+            }
+            
+    except requests.exceptions.RequestException as e:
+        return {"success": False, "error_code": 0, "error_message": str(e)}
