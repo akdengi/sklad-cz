@@ -275,6 +275,24 @@ def return_unit(uid):
     u.disposal_address = None
     u.disposal_price = None
     u.disposal_status = 0
+    # Проверка статуса Честного Знака и возврат в соответствующем статусе
+    try:
+        from app.cz_api import check_cz_status
+        cz_result = check_cz_status([u.cz_code]) if u.cz_code else None
+        if cz_result and cz_result.get("results"):
+            entry = cz_result["results"][0]
+            info = entry.get("cisInfo", entry)
+            status_raw = info.get("status") or info.get("cisStatus") or ""
+            _CZ_TO_UNIT_STATUS = {
+                'EMITTED': 1, 'APPLIED': 2, 'INTRODUCED': 3, 'INTRODUCED_RETURNED': 3,
+                'RETIRED': 5, 'WITHDRAWN': 5, 'WRITTEN_OFF': 5,
+            }
+            new_status_val = _CZ_TO_UNIT_STATUS.get(status_raw)
+            if new_status_val is not None and new_status_val > u.status:
+                u.status = new_status_val
+    except Exception as e:
+        # игнорируем ошибку проверки ЧЗ, статус оставляем как есть
+        pass
     u.updated_at = datetime.utcnow()
     db.session.commit()
     return jsonify({
