@@ -119,6 +119,7 @@ class Unit(db.Model):
     disposal_fias_id = db.Column(db.String(50), nullable=True)
     disposal_price = db.Column(db.Float, nullable=True)
     disposal_status = db.Column(db.Integer, default=0)
+    buyer_inn = db.Column(db.String(12), nullable=True)
     was_returned = db.Column(db.Boolean, default=False)
 
     cz_status = db.Column(db.String(100), nullable=True)
@@ -152,6 +153,7 @@ class Unit(db.Model):
             "disposal_fias_id": self.disposal_fias_id or "",
             "disposal_price": self.disposal_price,
             "disposal_status": self.disposal_status,
+            "buyer_inn": self.buyer_inn or "",
             "was_returned": bool(self.was_returned),
             "has_marking": bool(self.sku.has_marking) if self.sku else True,
             "cz_status": self.cz_status or "",

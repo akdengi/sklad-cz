@@ -303,7 +303,7 @@ def export_csv_units():
     buf.write("\ufeff")
     w = csv.writer(buf, delimiter=";")
     w.writerow(["ID", "SKU", "Артикул", "GTIN-14", "EAN-13", "Код ЧЗ", "Статус", "Склад", "Номер заказа", "Дата продажи",
-                "Тип выбытия", "Причина", "Вид док.", "Номер док.", "Дата док.", "Адрес", "Цена", "Статус отчета"])
+                "Тип выбытия", "Причина", "ИНН Покупателя", "Вид док.", "Номер док.", "Дата док.", "Адрес", "Цена", "Статус отчета"])
     for u in Unit.query.options(joinedload(Unit.sku), joinedload(Unit.warehouse)).order_by(Unit.id):
         w.writerow([
             u.id, u.sku.name, u.sku.article or "", u.sku.gtin14, u.sku.ean13 or "",
@@ -311,6 +311,7 @@ def export_csv_units():
             u.order_number or "", u.sold_date or "",
             DISPOSAL_TYPES.get(u.disposal_type, '') or '',
             DISPOSAL_REASONS.get(u.disposal_reason, '') or '',
+            u.buyer_inn or '',
             u.disposal_doc_type or '', u.disposal_doc_number or '',
             u.disposal_doc_date or '', u.disposal_address or '',
             u.disposal_price or '', DISPOSAL_STATUSES[u.disposal_status] if u.disposal_status else '',
@@ -330,6 +331,7 @@ def export_disposal_csv():
         "ID", "Код ЧЗ (полный)", "Код для ввода в оборот", "Код для Ozon",
         "SKU", "Артикул", "GTIN-14", "EAN-13",
         "Тип операции", "Причина выбытия",
+        "ИНН Покупателя",
         "Вид первичного документа", "Наименование документа",
         "Номер документа", "Дата документа",
         "Адрес места выбытия", "Цена за единицу",
@@ -348,6 +350,7 @@ def export_disposal_csv():
             u.sku.name, u.sku.article or '', u.sku.gtin14, u.sku.ean13 or '',
             DISPOSAL_TYPES.get(u.disposal_type, ''),
             DISPOSAL_REASONS.get(u.disposal_reason, ''),
+            u.buyer_inn or '',
             u.disposal_doc_type or '', u.disposal_doc_name or '',
             u.disposal_doc_number or '', u.disposal_doc_date or '',
             u.disposal_address or '', u.disposal_price or '',
@@ -605,7 +608,8 @@ def create_receipt_document_route():
             "disposal_doc_date": u.disposal_doc_date or "",
             "disposal_address": u.disposal_address or "",
             "disposal_fias_id": u.disposal_fias_id or "",
-            "disposal_price": u.disposal_price
+            "disposal_price": u.disposal_price,
+            "buyer_inn": u.buyer_inn or "",
         }
         unit_data_list.append(unit_doc_data)
     
@@ -868,6 +872,8 @@ def disposal_by_ids():
             "disposal_doc_number": u.disposal_doc_number or "",
             "disposal_doc_date": u.disposal_doc_date or "",
             "disposal_doc_name": u.disposal_doc_name or "",
+            "disposal_reason": u.disposal_reason or "",
+            "buyer_inn": u.buyer_inn or "",
         })
     
     return jsonify({"units": result})

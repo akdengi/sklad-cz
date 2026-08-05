@@ -658,6 +658,11 @@ def create_receipt_document(
     fias_id_to_use = (unit_data or {}).get("disposal_fias_id") or fias_id
     if fias_id_to_use:
         product_data["fias_id"] = fias_id_to_use
+
+    # Добавляем ИНН покупателя если есть
+    buyer_inn = (unit_data or {}).get("buyer_inn")
+    if buyer_inn:
+        product_data["buyer_inn"] = buyer_inn
     
     # Определяем цену - берем из unit_data или используем 0
     price_kopeks = 0

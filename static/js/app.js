@@ -32,10 +32,19 @@ const DISPOSAL_REASONS = {
   "eea_sale":"Трансграничная продажа в страны ЕЭАС",
   "export_eaes":"Экспорт за пределы ЕАЭС",
   "loss":"Утрата",
+  "destruction":"Уничтожение",
+  "utilization":"Утилизация",
   "market_recall":"Отзыв товара с рынка",
 };
-const DISPOSAL_REASONS_NO_DOCS = ["own_needs","production","gratuitous_transfer","loss","market_recall"];
+const DISPOSAL_REASONS_NO_DOCS = ["loss","destruction","utilization","market_recall"];
 const DISPOSAL_STATUSES = ["Не начато","Отправлено в ЧЗ","Подтверждено ЧЗ"];
+const REQUIRES_INN = ["own_needs","production","gratuitous_transfer"];
+const REASON_DOC_PREFIX = {
+  "remote_sale": "Заказ",
+  "own_needs": "УПД",
+  "production": "УПД",
+  "gratuitous_transfer": "УПД",
+};
 
 let editingSkuId = null, editingUnitId = null;
 let czDuplicateCheckTimer = null;
@@ -156,6 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateSubmitBtn();
   });
   document.getElementById('qs-order').addEventListener('input', updateSubmitBtn);
+  document.getElementById('qs-buyer-inn').addEventListener('input', updateSubmitBtn);
   document.getElementById('sold-sku-filter').addEventListener('change', () => { soldPage = 1; renderSold(); });
   document.getElementById('sold-warehouse-filter').addEventListener('change', () => { soldPage = 1; renderSold(); });
   document.getElementById('sold-date-from').addEventListener('change', () => { soldPage = 1; renderSold(); });
@@ -908,12 +918,13 @@ async function openUnitModal(id, presetSkuId) {
     document.getElementById('unit-disposal-address').value = u.disposal_address || '';
     document.getElementById('unit-disposal-fias-id').value = u.disposal_fias_id || '';
     document.getElementById('unit-disposal-price').value = u.disposal_price || '';
+    document.getElementById('unit-buyer-inn').value = u.buyer_inn || '';
     document.getElementById('unit-disposal-status').value = u.disposal_status || 0;
     setTimeout(checkDuplicate, 100);
     setTimeout(updateDisposalFields, 100);
     setTimeout(toggleUnitSoldFields, 10);
   } else {
-    ['unit-cz','unit-status','unit-status-select','unit-sold-date','unit-order','unit-disposal-doc-name','unit-disposal-doc-number','unit-disposal-doc-date','unit-disposal-price'].forEach(id => {
+    ['unit-cz','unit-status','unit-status-select','unit-sold-date','unit-order','unit-disposal-doc-name','unit-disposal-doc-number','unit-disposal-doc-date','unit-disposal-price','unit-buyer-inn'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
@@ -1092,6 +1103,7 @@ async function saveUnit() {
     disposal_fias_id: document.getElementById('unit-disposal-fias-id').value.trim() || null,
     disposal_price: parseFloat(document.getElementById('unit-disposal-price').value) || null,
     disposal_status: parseInt(document.getElementById('unit-disposal-status').value),
+    buyer_inn: document.getElementById('unit-buyer-inn').value.trim() || null,
   };
   try {
     let result;
@@ -1133,6 +1145,7 @@ async function showUnitDetail(id) {
         <h6><i class="bi bi-arrow-up-right"></i> Данные для отчёта о выводе из оборота</h6>
         <p class="mb-1"><strong>Тип операции:</strong> ${DISPOSAL_TYPES[u.disposal_type] || u.disposal_type}</p>
         <p class="mb-1"><strong>Причина:</strong> ${DISPOSAL_REASONS[u.disposal_reason] || u.disposal_reason || '—'}</p>
+        ${u.buyer_inn ? `<p class="mb-1"><strong>ИНН Покупателя:</strong> ${esc(u.buyer_inn)}</p>` : ''}
         <p class="mb-1"><strong>Вид документа:</strong> ${esc(u.disposal_doc_type || '—')}</p>
         <p class="mb-1"><strong>Наименование:</strong> ${esc(u.disposal_doc_name || '—')}</p>
         <p class="mb-1"><strong>Номер:</strong> ${esc(u.disposal_doc_number || '—')}</p>
@@ -1156,11 +1169,10 @@ async function showUnitDetail(id) {
     <div class="d-flex gap-2 align-items-center mb-3 p-2 border rounded bg-light">
       <span class="fw-semibold small">Списать:</span>
       <select class="form-select form-select-sm" id="writeoff-reason-${u.id}" style="width:auto">
-        <option value="loss">Утеря</option>
-        <option value="own_needs">Собственные нужды</option>
-        <option value="production">Производственные цели</option>
-        <option value="gratuitous_transfer">Безвозмездная передача</option>
-        <option value="market_recall">Отзыв с рынка</option>
+        <option value="loss">Утрата</option>
+        <option value="destruction">Уничтожение</option>
+        <option value="utilization">Утилизация</option>
+        <option value="market_recall">Отзыв товаров с рынка</option>
       </select>
       <button class="btn btn-outline-warning btn-sm" onclick="writeOffUnit(${u.id})"><i class="bi bi-x-octagon"></i> Списать</button>
     </div>
@@ -1200,8 +1212,8 @@ function copyText(t) {
 
 async function writeOffUnit(id) {
   const reason = document.getElementById(`writeoff-reason-${id}`).value;
-  const reasonNames = { loss: 'утеря', own_needs: 'собственные нужды', production: 'производство', gratuitous_transfer: 'безвозмездная передача', market_recall: 'отзыв с рынка' };
-  if (!confirm(`Списать товар #${id} (${reasonNames[reason] || reason})?\n\nСтатус изменится на «Выбыл», отчёт о выбытии будет подан в ЧЗ.`)) return;
+  const reasonNames = { loss: 'утрата', destruction: 'уничтожение', utilization: 'утилизация', market_recall: 'отзыв с рынка' };
+  if (!confirm(`Списать товар #${id} (${reasonNames[reason] || reason})?\n\nСтатус изменится на «Выбыл». Вывод из оборота выполняется вручную через ЛК ЧЗ.`)) return;
   try {
     const r = await api(`/api/units/${id}/write-off`, { method: 'POST', body: JSON.stringify({ reason }) });
     toast(r.message, 'success');
@@ -1211,6 +1223,94 @@ async function writeOffUnit(id) {
 }
 
 // ============ QUICK SELL (CART) ============
+function validateINN(inn) {
+  if (!inn) return { valid: false, error: '' };
+  const cleaned = inn.replace(/\s/g, '');
+  if (!/^\d+$/.test(cleaned)) return { valid: false, error: 'ИНН должен содержать только цифры' };
+  if (cleaned.length !== 10 && cleaned.length !== 12) return { valid: false, error: 'ИНН должен быть 10 или 12 цифр' };
+  if (cleaned.length === 10) {
+    const weights = [2, 4, 10, 3, 5, 9, 4, 6, 8];
+    let sum = 0;
+    for (let i = 0; i < 9; i++) sum += parseInt(cleaned[i]) * weights[i];
+    const checkDigit = sum % 11 === 10 ? 0 : sum % 11;
+    if (checkDigit !== parseInt(cleaned[9])) return { valid: false, error: 'Неверная контрольная цифра ИНН' };
+  } else {
+    const weights1 = [7, 2, 4, 10, 3, 5, 9, 4, 6, 8];
+    let sum1 = 0;
+    for (let i = 0; i < 10; i++) sum1 += parseInt(cleaned[i]) * weights1[i];
+    const check11 = sum1 % 11 === 10 ? 0 : sum1 % 11;
+    if (check11 !== parseInt(cleaned[10])) return { valid: false, error: 'Неверная 11-я цифра ИНН' };
+    const weights2 = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8];
+    let sum2 = 0;
+    for (let i = 0; i < 11; i++) sum2 += parseInt(cleaned[i]) * weights2[i];
+    const check12 = sum2 % 11 === 10 ? 0 : sum2 % 11;
+    if (check12 !== parseInt(cleaned[11])) return { valid: false, error: 'Неверная 12-я цифра ИНН' };
+  }
+  return { valid: true };
+}
+
+let _innValid = false;
+function onReasonChange() {
+  const reason = document.getElementById('qs-reason').value;
+  const innInput = document.getElementById('qs-buyer-inn');
+  const innHint = document.getElementById('qs-inn-hint');
+  const orderInput = document.getElementById('qs-order');
+  if (reason === 'remote_sale') {
+    orderInput.placeholder = '№ заказа';
+  } else {
+    orderInput.placeholder = '№ передаточного документа';
+  }
+  if (REQUIRES_INN.includes(reason)) {
+    innInput.disabled = false;
+    innInput.required = true;
+    innHint.textContent = 'ИНН обязателен';
+    innHint.classList.add('text-danger');
+    innHint.classList.remove('text-muted');
+    innInput.classList.remove('is-invalid');
+    _innValid = false;
+  } else {
+    innInput.disabled = true;
+    innInput.required = false;
+    innInput.value = '';
+    innHint.textContent = '';
+    innHint.classList.remove('text-danger');
+    innHint.classList.add('text-muted');
+    innInput.classList.remove('is-invalid');
+    _innValid = true;
+  }
+  updateSubmitBtn();
+}
+
+function onInnInput() {
+  const innInput = document.getElementById('qs-buyer-inn');
+  const innHint = document.getElementById('qs-inn-hint');
+  const val = innInput.value.trim();
+  if (!val) {
+    _innValid = false;
+    innInput.classList.remove('is-invalid');
+    innHint.textContent = 'ИНН обязателен';
+    innHint.classList.add('text-danger');
+    innHint.classList.remove('text-muted');
+    updateSubmitBtn();
+    return;
+  }
+  const result = validateINN(val);
+  if (result.valid) {
+    _innValid = true;
+    innInput.classList.remove('is-invalid');
+    innHint.textContent = 'ИНН корректен';
+    innHint.classList.remove('text-danger');
+    innHint.classList.add('text-success');
+  } else {
+    _innValid = false;
+    innInput.classList.add('is-invalid');
+    innHint.textContent = result.error;
+    innHint.classList.add('text-danger');
+    innHint.classList.remove('text-success');
+  }
+  updateSubmitBtn();
+}
+
 async function renderQuickSell() {
   const warehouses = await api('/api/warehouses');
   cachedWarehouses = warehouses;
@@ -1230,8 +1330,22 @@ function updateSubmitBtn() {
   const btn = document.getElementById('qs-submit-btn');
   const order = document.getElementById('qs-order').value.trim();
   const wh = document.getElementById('qs-target-warehouse').value;
+  const reason = document.getElementById('qs-reason').value;
+  const buyerInn = document.getElementById('qs-buyer-inn').value.trim();
   const total = qsCart.reduce((s, i) => s + (i.price || 0), 0);
   if (qsCart.length > 0 && order && wh) {
+    if (REQUIRES_INN.includes(reason)) {
+      if (!buyerInn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="bi bi-lightning"></i> Укажите ИНН`;
+        return;
+      }
+      if (!_innValid) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="bi bi-lightning"></i> ИНН некорректен`;
+        return;
+      }
+    }
     btn.disabled = false;
     btn.innerHTML = `<i class="bi bi-lightning"></i> Продать всё (${qsCart.length} поз., ${total.toFixed(0)} ₽)`;
   } else {
@@ -1439,7 +1553,8 @@ async function submitCart() {
   const targetWh = parseInt(document.getElementById('qs-target-warehouse').value);
   const orderNumber = document.getElementById('qs-order').value.trim();
   const sellDate = document.getElementById('qs-sell-date').value;
-  const docType = document.getElementById('qs-doc-type').value;
+  const reason = document.getElementById('qs-reason').value;
+  const buyerInn = document.getElementById('qs-buyer-inn').value.trim();
   const resultDiv = document.getElementById('qs-result');
 
   if (!orderNumber) { toast('Введите номер заказа', 'error'); return; }
@@ -1458,7 +1573,8 @@ async function submitCart() {
         if (orderNumber) payload.order_number = orderNumber;
         if (item.price) payload.disposal_price = item.price;
         if (sellDate) payload.sold_date = sellDate;
-        if (docType) payload.disposal_doc_type = docType;
+        if (reason) payload.disposal_reason = reason;
+        if (buyerInn) payload.buyer_inn = buyerInn;
         await api('/api/units/quick-sell', { method: 'POST', body: JSON.stringify(payload) });
       } else {
         const payload = {};
@@ -1493,10 +1609,12 @@ async function submitCart() {
   // clear quick‑sell form inputs after successful sale
   document.getElementById('qs-order').value = '';
   document.getElementById('qs-sell-date').value = '';
-  document.getElementById('qs-doc-type').value = 'прочее';
+  document.getElementById('qs-reason').value = 'remote_sale';
+  document.getElementById('qs-buyer-inn').value = '';
   document.getElementById('qs-add-code').value = '';
   document.getElementById('qs-add-price').value = '';
   document.getElementById('qs-add-status').innerHTML = '';
+  onReasonChange();
 
   btn.disabled = false;
   btn.innerHTML = '<i class="bi bi-lightning"></i> Продать';
@@ -1795,6 +1913,7 @@ async function renderDisposal() {
       <td>${warehouseBadge(u.warehouse_name)}</td>
       <td>${DISPOSAL_TYPES[u.disposal_type] || '—'}</td>
       <td>${DISPOSAL_REASONS[u.disposal_reason] || u.disposal_reason || '—'}</td>
+      <td>${esc(u.buyer_inn || '')}</td>
       <td>${esc(u.disposal_doc_type || '')} ${u.disposal_doc_number ? '№' + esc(u.disposal_doc_number) : ''}</td>
       <td>${fmtDate(u.disposal_doc_date)}${deadlineBadge}</td>
       <td>${u.disposal_price ? u.disposal_price.toFixed(2) : '—'}</td>
@@ -2062,17 +2181,33 @@ async function exportDisposalReport() {
     return;
   }
 
-  pendingDisposalIds = ids;
-
-  // Загружаем данные для предпросмотра
+  // Загружаем данные для проверки причин
   try {
     const r = await api(`/api/cz/disposal-by-ids?ids=${ids.join(',')}`);
     if (r && r.units) {
-      pendingDisposalData = r.units;
-      showDisposalPreview();
+      const units = r.units;
+      // Проверяем причины - автоматический вывод только для remote_sale
+      const nonAutoUnits = units.filter(u => u.disposal_reason && u.disposal_reason !== 'remote_sale');
+      if (nonAutoUnits.length > 0) {
+        const reasons = nonAutoUnits.map(u => DISPOSAL_REASONS[u.disposal_reason] || u.disposal_reason).join(', ');
+        toast(`Для причин "${reasons}" вывод из оборота выполняется вручную через ЛК ЧЗ. Автоматически можно отправить только "Дистанционную продажу".`, 'warning', 5000);
+        // Фильтруем только автоматические
+        const autoUnits = units.filter(u => !u.disposal_reason || u.disposal_reason === 'remote_sale');
+        if (autoUnits.length === 0) {
+          toast('Нет единиц для автоматической отправки. Подайте отчёт вручную через ЛК ЧЗ.', 'info');
+          return;
+        }
+        pendingDisposalIds = autoUnits.map(u => u.id);
+        pendingDisposalData = autoUnits;
+        showDisposalPreview();
+      } else {
+        pendingDisposalIds = ids;
+        pendingDisposalData = units;
+        showDisposalPreview();
+      }
     } else {
       // Если API недоступен, показываем простое подтверждение
-      if (!confirm(`Создать документ вывода из оборота для ${ids.length} единиц?`)) return;
+      if (!confirm(`Создать документ вывода из оборота для ${ids.length} единиц?\n\n(Только для дистанционной продажи)`)) return;
       const toastId = toast(`Отправка документов...`, 'info', 0);
       try {
         const r2 = await api('/api/cz/receipt/create', {

@@ -114,7 +114,7 @@ body { background: #f0f2f5; }
     <h5 class="card-title mb-3"><i class="bi bi-lightning"></i> Быстрая продажа</h5>
     <div class="row g-3 mb-3">
       <div class="col-md-3">
-        <label class="form-label fw-semibold">Номер заказа *</label>
+        <label class="form-label fw-semibold">Номер заказа или УПД *</label>
         <input type="text" class="form-control" id="qs-order" placeholder="№ заказа">
       </div>
       <div class="col-md-3">
@@ -127,14 +127,18 @@ body { background: #f0f2f5; }
         <input type="date" class="form-control" id="qs-sell-date">
       </div>
       <div class="col-md-2">
-        <label class="form-label fw-semibold">Вид док-та</label>
-        <select class="form-select" id="qs-doc-type">
-          <option value="прочее" selected>Прочее</option>
-          <option value="УПД">УПД</option>
-          <option value="товарная накладная">Товарная накладная</option>
-          <option value="акт приема-передачи">Акт приёма-передачи</option>
-          <option value="кассовый чек">Кассовый чек</option>
+        <label class="form-label fw-semibold">Причина *</label>
+        <select class="form-select" id="qs-reason" onchange="onReasonChange()">
+          <option value="remote_sale" selected>Дистанционная продажа</option>
+          <option value="own_needs">Использование для собственных нужд</option>
+          <option value="production">Использование для производств. целей</option>
+          <option value="gratuitous_transfer">Безвозмездная передача</option>
         </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label fw-semibold">ИНН Покупателя</label>
+        <input type="text" class="form-control" id="qs-buyer-inn" placeholder="ИНН" maxlength="12" disabled oninput="onInnInput()">
+        <small class="text-muted" id="qs-inn-hint"></small>
       </div>
       <div class="col-md-2 d-flex align-items-end">
         <button class="btn btn-success btn-lg w-100" id="qs-submit-btn" onclick="submitCart()" disabled>
@@ -343,7 +347,7 @@ body { background: #f0f2f5; }
     <table class="table table-hover align-middle mb-0" id="disposal-table">
       <thead class="table-light"><tr>
         <th style="width:40px"><input type="checkbox" class="form-check-input" id="disposal-select-all" onchange="toggleSelectAll('disposal', this.checked)"></th>
-        <th>ID</th><th>SKU</th><th>Код ЧЗ</th><th>Склад</th><th>Тип операции</th><th>Причина</th><th>Документ</th><th>Дата</th><th>Цена</th><th>Статус отчета</th><th>Статус в ЧЗ</th><th></th></tr></thead>
+        <th>ID</th><th>SKU</th><th>Код ЧЗ</th><th>Склад</th><th>Тип операции</th><th>Причина</th><th>ИНН Покупателя</th><th>Документ</th><th>Дата</th><th>Цена</th><th>Статус отчета</th><th>Статус в ЧЗ</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
     </div>
@@ -761,8 +765,13 @@ body { background: #f0f2f5; }
                 <option value="eea_sale">Трансграничная продажа в страны ЕЭАС</option>
                 <option value="export_eaes">Экспорт за пределы ЕАЭС</option>
                 <option value="loss">Утрата</option>
+                <option value="destruction">Уничтожение</option>
+                <option value="utilization">Утилизация</option>
                 <option value="market_recall">Отзыв товара с рынка</option>
               </select>
+            </div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">ИНН Покупателя</label>
+              <input type="text" class="form-control form-control-sm" id="unit-buyer-inn" placeholder="ИНН покупателя" maxlength="12">
             </div>
             <div class="col-md-4 disposal-docs-required"><label class="form-label small fw-semibold">Вид первичного документа</label>
               <select class="form-select form-select-sm" id="unit-disposal-doc-type">

@@ -20,6 +20,15 @@ DISPOSAL_TYPES = {
 DISPOSAL_REASONS = {
     "remote_sale": "Дистанционная продажа",
     "remote_sale_return": "Возврат при дистанционном способе продажи",
+    "own_needs": "Использование для собственных нужд",
+    "production": "Использование для производственных целей",
+    "gratuitous_transfer": "Безвозмездная передача",
+    "eea_sale": "Трансграничная продажа в страны ЕЭАС",
+    "export_eaes": "Экспорт за пределы ЕАЭС",
+    "loss": "Утрата",
+    "destruction": "Уничтожение",
+    "utilization": "Утилизация",
+    "market_recall": "Отзыв товара с рынка",
 }
 
 DISPOSAL_DOC_TYPES = [

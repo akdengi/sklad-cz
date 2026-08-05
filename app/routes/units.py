@@ -584,6 +584,8 @@ def quick_sell():
     target_warehouse_id = data.get("target_warehouse_id")
     order_number = (data.get("order_number") or "").strip() or None
     disposal_price = data.get("disposal_price")
+    disposal_reason = (data.get("disposal_reason") or "").strip()
+    buyer_inn = (data.get("buyer_inn") or "").strip() or None
 
     if not cz_code:
         abort(400, "Код ЧЗ обязателен")
@@ -639,15 +641,21 @@ def quick_sell():
         unit.order_number = order_number
 
     unit.disposal_type = "shipment"
-    disposal_doc_type = (data.get("disposal_doc_type") or "прочее").strip()
-    unit.disposal_doc_type = disposal_doc_type
+    unit.buyer_inn = buyer_inn
 
-    if disposal_doc_type == "УПД":
-        unit.disposal_reason = "own_needs"
-        unit.disposal_doc_name = f"УПД {order_number}" if order_number else ""
-    else:
-        unit.disposal_reason = "remote_sale"
+    # Определяем вид документа и наименование на основе причины
+    valid_reasons = ["remote_sale", "own_needs", "production", "gratuitous_transfer"]
+    if disposal_reason not in valid_reasons:
+        disposal_reason = "remote_sale"
+
+    unit.disposal_reason = disposal_reason
+
+    if disposal_reason == "remote_sale":
+        unit.disposal_doc_type = (data.get("disposal_doc_type") or "прочее").strip()
         unit.disposal_doc_name = f"Заказ {order_number}" if order_number else ""
+    else:
+        unit.disposal_doc_type = "прочее"
+        unit.disposal_doc_name = f"УПД {order_number}" if order_number else ""
 
     unit.disposal_doc_number = order_number or ""
     unit.disposal_doc_date = unit.sold_date
@@ -683,7 +691,7 @@ def write_off_unit(uid):
 
     data = request.json or {}
     reason = (data.get("reason") or "loss").strip()
-    valid_reasons = ["own_needs", "production", "gratuitous_transfer", "loss", "market_recall"]
+    valid_reasons = ["loss", "destruction", "utilization", "market_recall"]
     if reason not in valid_reasons:
         abort(400, f"Недопустимая причина: {reason}")
 
@@ -805,6 +813,7 @@ def sell_unit(uid):
     u.disposal_doc_date = data.get("disposal_doc_date", u.sold_date)
     u.disposal_address = data.get("disposal_address")
     u.disposal_price = data.get("disposal_price")
+    u.buyer_inn = data.get("buyer_inn", u.buyer_inn)
     u.disposal_status = 0
     u.updated_at = datetime.utcnow()
     db.session.commit()
@@ -884,6 +893,7 @@ def create_unit():
         disposal_fias_id=data.get("disposal_fias_id"),
         disposal_price=data.get("disposal_price"),
         disposal_status=int(data.get("disposal_status") or 0),
+        buyer_inn=data.get("buyer_inn"),
         cz_offline_valid=validation["valid"] if validation else None,
     )
     try:
@@ -934,6 +944,7 @@ def update_unit(uid):
     u.disposal_address = data.get("disposal_address", u.disposal_address)
     u.disposal_fias_id = data.get("disposal_fias_id", u.disposal_fias_id)
     u.disposal_price = data.get("disposal_price", u.disposal_price)
+    u.buyer_inn = data.get("buyer_inn", u.buyer_inn)
     new_disposal_status = int(data.get("disposal_status") or u.disposal_status)
     # Подтверждение ЧЗ возможно только при статусе Выбыл
     if new_disposal_status == 1 and u.cz_status not in ('RETIRED', 'WITHDRAWN', 'WRITTEN_OFF'):
