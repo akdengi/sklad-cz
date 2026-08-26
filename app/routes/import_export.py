@@ -640,17 +640,35 @@ def create_receipt_document_route():
             except Exception:
                 pass
             
-            # Пытаемся получить статус документа из ГИС МТ
+            # Пытаемся получить ID документа из ответа
             doc_id = None
-            if isinstance(result.get("data"), dict):
-                doc_id = result["data"].get("documentId") or result["data"].get("number")
-            elif isinstance(result.get("data"), str):
-                doc_id = result["data"]
+            data = result.get("data")
+            logging.debug(f"[disposal] raw API response: {result}")
+            if isinstance(data, dict):
+                doc_id = (data.get("documentId") or data.get("number") or
+                          data.get("value") or data.get("id") or data.get("document_id"))
+                # Если нашли вложенный документ
+                if not doc_id and "data" in data:
+                    nested = data["data"]
+                    if isinstance(nested, dict):
+                        doc_id = nested.get("documentId") or nested.get("number") or nested.get("value")
+                    elif isinstance(nested, str):
+                        doc_id = nested
+            elif isinstance(data, str):
+                doc_id = data
+            # Также проверяем корневой уровень
+            if not doc_id and isinstance(result, dict):
+                doc_id = result.get("value") or result.get("document_id")
+            logging.debug(f"[disposal] extracted doc_id: {doc_id}")
             
             document_status_info = None
             if doc_id:
                 try:
-                    from app.cz_api import check_document_status_by_id
+                    from app.cz_api import check_document_status_by_id, get_document_type_code
+                    from app.utils import load_settings, get_product_group_code
+                    s = load_settings()
+                    product_group_id = s.get("product_group", "27")
+                    pg = get_product_group_code(product_group_id)
                     status_result = check_document_status_by_id(doc_id, pg=pg)
                     if status_result.get("success"):
                         document_status_info = {

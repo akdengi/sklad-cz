@@ -737,6 +737,7 @@ def create_receipt_document(
     # Если ответ JSON, возвращаем данные
     try:
         result = r.json()
+        logging.debug(f"[receipt] API response: {result}")
         return {"success": True, "data": result}
     except Exception as e:
         # Ответ не JSON (например, просто UUID документа) - это может быть успех
