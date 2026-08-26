@@ -64,6 +64,10 @@ def get_units():
         q = q.filter(Unit.warehouse_id == int(request.args["warehouse_id"]))
     if request.args.get("sku_id"):
         q = q.filter(Unit.sku_id == int(request.args["sku_id"]))
+    if request.args.get("ids"):
+        id_list = [int(x) for x in request.args["ids"].split(",") if x.strip().isdigit()]
+        if id_list:
+            q = q.filter(Unit.id.in_(id_list))
     if request.args.get("status") is not None:
         q = q.filter(Unit.status == int(request.args["status"]))
     else:
@@ -1000,3 +1004,36 @@ def unit_dm_image(uid):
     image.convert('1').save(buf, format='PNG')
     buf.seek(0)
     return send_file(buf, mimetype='image/png')
+
+
+@units_bp.route("/introduce", methods=["POST"])
+def introduce_units():
+    """Ввод единиц в оборот (4 метода: production, remains, contract, import_fts)."""
+    data = request.json or {}
+    introduction_type = data.get("introduction_type", "")
+    unit_ids = data.get("unit_ids", [])
+    form_data = data.get("form_data", {})
+
+    if not introduction_type:
+        abort(400, "introduction_type is required")
+    if not unit_ids:
+        abort(400, "unit_ids is required")
+
+    from app.cz_api import create_introduction_document, INTRODUCTION_TYPES
+    if introduction_type not in INTRODUCTION_TYPES:
+        abort(400, f"Unknown type: {introduction_type}")
+
+    try:
+        result = create_introduction_document(
+            introduction_type=introduction_type,
+            unit_ids=unit_ids,
+            form_data=form_data,
+        )
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+    if result.get("success"):
+        return jsonify({"ok": True, "result": result})
+    else:
+        return jsonify({"ok": False, "error": result.get("error_message", "Unknown error"),
+                        "error_code": result.get("error_code")}), 400

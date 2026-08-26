@@ -114,8 +114,29 @@ def migrate_table(table_name, model, session):
 def init_db(app):
     with app.app_context():
         from app.models import Warehouse, SKU, Unit
+        from sqlalchemy import text
 
         db.create_all()
+
+        # Явная миграция новых колонок
+        _ensure_columns = [
+            ("sku", "cert_type", "VARCHAR(50)"),
+            ("sku", "cert_number", "VARCHAR(255)"),
+            ("sku", "cert_date", "VARCHAR(10)"),
+            ("sku", "contractor_inn", "VARCHAR(12)"),
+        ]
+        existing_cols = set()
+        for row in db.session.execute(text("PRAGMA table_info(sku)")).fetchall():
+            existing_cols.add(row[1])
+        for tbl, col, typ in _ensure_columns:
+            if col not in existing_cols:
+                try:
+                    db.session.execute(text(f"ALTER TABLE {tbl} ADD COLUMN {col} {typ}"))
+                    db.session.commit()
+                    print(f"  [migration] {tbl}: +{col}")
+                except Exception as e:
+                    db.session.rollback()
+                    print(f"  [migration] {tbl}.{col}: {e}")
 
         migrate_table("warehouse", Warehouse, db.session)
         migrate_table("sku", SKU, db.session)

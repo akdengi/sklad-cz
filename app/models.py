@@ -56,7 +56,11 @@ class SKU(db.Model):
     ean13 = db.Column(db.String(13), nullable=True)
     production_date = db.Column(db.String(10), nullable=True)
     permit_doc = db.Column(db.Text, nullable=True)
+    cert_type = db.Column(db.String(50), nullable=True)
+    cert_number = db.Column(db.String(255), nullable=True)
+    cert_date = db.Column(db.String(10), nullable=True)
     tnved_code = db.Column(db.String(20), nullable=True)
+    contractor_inn = db.Column(db.String(12), nullable=True)
     total_quantity = db.Column(db.Integer, default=0)
     has_marking = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -86,7 +90,11 @@ class SKU(db.Model):
             "ean13": self.ean13,
             "production_date": self.production_date,
             "permit_doc": self.permit_doc or "",
+            "cert_type": self.cert_type or "",
+            "cert_number": self.cert_number or "",
+            "cert_date": self.cert_date or "",
             "tnved_code": self.tnved_code or "",
+            "contractor_inn": self.contractor_inn or "",
             "total_quantity": self.total_quantity or 0,
             "has_marking": bool(self.has_marking),
             "marked_count": marked,
@@ -135,8 +143,13 @@ class Unit(db.Model):
             "sku_name": self.sku.name if self.sku else None,
             "sku_article": self.sku.article if self.sku else None,
             "sku_permit_doc": self.sku.permit_doc if self.sku else None,
+            "sku_cert_type": self.sku.cert_type if self.sku else None,
+            "sku_cert_number": self.sku.cert_number if self.sku else None,
+            "sku_cert_date": self.sku.cert_date if self.sku else None,
+            "sku_contractor_inn": self.sku.contractor_inn if self.sku else None,
             "gtin14": self.sku.gtin14 if self.sku else None,
             "ean13": self.sku.ean13 if self.sku else None,
+            "production_date": self.sku.production_date if self.sku else None,
             "cz_code": self.cz_code or "",
             "status": self.status,
             "warehouse_id": self.warehouse_id,

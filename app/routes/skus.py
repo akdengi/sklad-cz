@@ -28,7 +28,11 @@ def create_sku():
         ean13=ean13,
         production_date=data.get("production_date"),
         permit_doc=data.get("permit_doc"),
+        cert_type=(data.get("cert_type") or "").strip() or None,
+        cert_number=(data.get("cert_number") or "").strip() or None,
+        cert_date=data.get("cert_date") or None,
         tnved_code=(data.get("tnved_code") or "").strip() or None,
+        contractor_inn=(data.get("contractor_inn") or "").strip() or None,
         total_quantity=int(data.get("total_quantity") or 0),
         has_marking=bool(data.get("has_marking", True)),
     )
@@ -48,8 +52,13 @@ def update_sku(sid):
     sku.ean13 = ean13.strip() if ean13 else (sku.gtin14[1:] if sku.gtin14.startswith("0") else None)
     sku.production_date = data.get("production_date", sku.production_date)
     sku.permit_doc = data.get("permit_doc", sku.permit_doc)
+    sku.cert_type = (data.get("cert_type") or "").strip() or None
+    sku.cert_number = (data.get("cert_number") or "").strip() or None
+    sku.cert_date = data.get("cert_date") or None
     tnved = data.get("tnved_code")
     sku.tnved_code = tnved.strip() if tnved else None
+    contractor_inn = data.get("contractor_inn")
+    sku.contractor_inn = contractor_inn.strip() if contractor_inn else None
     sku.total_quantity = int(data.get("total_quantity") or 0)
     sku.has_marking = bool(data.get("has_marking", sku.has_marking))
     db.session.commit()

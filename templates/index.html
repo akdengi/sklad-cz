@@ -246,6 +246,17 @@ body { background: #f0f2f5; }
     </div>
     <div id="stock-toolbar" class="mb-2 d-none">
       <button class="btn btn-outline-info btn-sm" onclick="batchCzCheck('stock')"><i class="bi bi-arrow-clockwise"></i> Проверить статус в ЧЗ (<span id="stock-selected-count">0</span>)</button>
+      <button class="btn btn-outline-success btn-sm ms-2" onclick="openIntroduceModal()"><i class="bi bi-box-arrow-in-right"></i> Ввод в оборот</button>
+      <div class="btn-group btn-group-sm ms-2">
+        <button class="btn btn-outline-primary" onclick="exportSelectedCSV('all')"><i class="bi bi-download"></i> Скачать CSV</button>
+        <button type="button" class="btn btn-outline-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false"></button>
+        <ul class="dropdown-menu">
+          <li><a class="dropdown-item" href="#" onclick="exportSelectedCSV('all')">Все поля</a></li>
+          <li><a class="dropdown-item" href="#" onclick="exportSelectedCSV('report')">Код для отчёта о нанесении</a></li>
+          <li><a class="dropdown-item" href="#" onclick="exportSelectedCSV('marketplace')">Код для маркетплейсов</a></li>
+          <li><a class="dropdown-item" href="#" onclick="exportSelectedCSV('short')">Краткие коды (до GS)</a></li>
+        </ul>
+      </div>
       <button class="btn btn-outline-secondary btn-sm ms-2" onclick="clearSelection('stock')"><i class="bi bi-x-lg"></i> Снять выделение</button>
     </div>
     <div class="table-responsive">
@@ -648,11 +659,31 @@ body { background: #f0f2f5; }
           </div>
           <div id="tnved-results" class="list-group mt-1 d-none" style="max-height:200px;overflow-y:auto"></div>
         </div>
+        <div class="mb-3"><label class="form-label fw-semibold">ИНН фактического производителя</label>
+          <input type="text" class="form-control" id="sku-contractor-inn" placeholder="1234567890" maxlength="12" oninput="checkInnField(this)">
+          <small class="text-muted">Для ввода в оборот (остатки, контрактное производство). По умолчанию — ваш ИНН из настроек</small>
+        </div>
         <div class="mb-3"><label class="form-label fw-semibold" for="sku-gtin">GTIN-14 *</label><input type="text" class="form-control" id="sku-gtin" maxlength="14" oninput="autoEAN()"><small class="text-muted">Обязателен для товаров с маркировкой</small></div>
         <div class="mb-3"><label class="form-label fw-semibold">EAN-13</label><input type="text" class="form-control" id="sku-ean" maxlength="13"></div>
         <div class="mb-3"><label class="form-label fw-semibold">Дата производства</label><input type="date" class="form-control" id="sku-date"></div>
         <div class="mb-3"><label class="form-label fw-semibold">Тираж</label><input type="number" class="form-control" id="sku-total" min="0" value="0"></div>
-        <div class="mb-3"><label class="form-label fw-semibold">Разрешит. документация</label><textarea class="form-control" id="sku-permit" rows="3"></textarea></div>
+        <div class="mb-3"><label class="form-label fw-semibold">Разрешит. документация</label>
+          <div class="row g-2">
+            <div class="col-5">
+              <select class="form-select form-select-sm" id="sku-cert-type">
+                <option value="">— не указан —</option>
+                <option value="CONFORMITY_CERTIFICATE">Сертификат соответствия</option>
+                <option value="CONFORMITY_DECLARATION">Декларация о соответствии</option>
+                <option value="STATE_REGISTRATION_CERTIFICATE">Свидетельство о гос. рег.</option>
+                <option value="PERMIT">Разрешение</option>
+                <option value="EXPERTISE_CONCLUSION">Экспертное заключение</option>
+                <option value="PTC_CONCLUSION">Заключение ПТЦ</option>
+              </select>
+            </div>
+            <div class="col"><input type="text" class="form-control form-control-sm" id="sku-cert-number" placeholder="Номер документа"></div>
+            <div class="col"><input type="date" class="form-control form-control-sm" id="sku-cert-date"></div>
+          </div>
+        </div>
       </div>
       <div class="modal-footer"><button type="button" class="btn btn-secondary" onclick="closeSkuModal()">Отмена</button><button type="button" class="btn btn-primary" onclick="saveSku()">Сохранить</button></div>
     </div>
@@ -897,6 +928,169 @@ body { background: #f0f2f5; }
   </div>
 </div>
 
+
+<!-- ===== ВВОД В ОБОРОТ ===== -->
+<div class="modal fade" id="introduce-modal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title"><i class="bi bi-box-arrow-in-right"></i> Ввод в оборот</h5>
+        <button type="button" class="btn-close btn-close-white" onclick="closeIntroduceModal()"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Выбрано единиц: <span id="introduce-count" class="text-success">0</span></label>
+          <div id="introduce-units-preview" class="small text-muted" style="max-height:60px;overflow-y:auto"></div>
+        </div>
+
+        <div id="introduce-permit-doc-section" class="mb-3 d-none">
+          <label class="form-label small fw-semibold">Разрешительная документация (из карточки SKU)</label>
+          <div id="introduce-permit-doc-info" class="p-2 rounded" style="background:#f0f4f8;border:1px solid #dee2e6;font-size:13px"></div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Метод ввода в оборот</label>
+          <select class="form-select" id="introduce-type" onchange="onIntroduceTypeChange()">
+            <option value="production">Производство в РФ</option>
+            <option value="remains">Остатки</option>
+            <option value="contract">Контрактное производство</option>
+            <option value="import_fts">Импорт с ФТС</option>
+          </select>
+        </div>
+
+        <!-- Производство в РФ -->
+        <div id="introduce-fields-production" class="introduce-fields">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Дата производства</label>
+            <input type="date" class="form-control form-control-sm" id="introduce-production-date">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold text-muted">ИНН производителя и собственника</label>
+            <input type="text" class="form-control form-control-sm" id="introduce-inn-display" readonly disabled>
+            <small class="text-muted">Из настроек Честный Знак</small>
+          </div>
+        </div>
+
+        <!-- Контрактное производство -->
+        <div id="introduce-fields-contract" class="introduce-fields d-none">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Дата производства</label>
+            <input type="date" class="form-control form-control-sm" id="introduce-contract-date">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold text-muted">ИНН собственника</label>
+            <input type="text" class="form-control form-control-sm" id="introduce-contract-owner-inn" readonly disabled>
+            <small class="text-muted">Из настроек Честный Знак</small>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">ИНН контрактного производителя</label>
+            <input type="text" class="form-control form-control-sm" id="introduce-contract-producer-inn" placeholder="1234567890" maxlength="12" oninput="checkInnField(this)">
+            <small class="text-muted">Из карточки SKU (можно изменить)</small>
+          </div>
+        </div>
+
+        <!-- Остатки -->
+        <div id="introduce-fields-remains" class="introduce-fields d-none">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">ИНН собственника</label>
+            <input type="text" class="form-control form-control-sm" id="introduce-remains-inn" maxlength="12" readonly disabled>
+            <small class="text-muted">Из настроек Честный Знак</small>
+          </div>
+          <div class="row mb-3">
+            <div class="col">
+              <label class="form-label small fw-semibold">Страна производства</label>
+              <input type="text" class="form-control form-control-sm" id="introduce-country" value="643" placeholder="643" maxlength="3" oninput="onIntroduceCountryChange()">
+              <small class="text-muted">Трёхзначный код по <a href="https://classifikators.ru/oksm" target="_blank" rel="noopener">ОКСМ</a> (напр. 643 — Россия, 398 — Казахстан)</small>
+            </div>
+          </div>
+          <div id="introduce-declaration-fields">
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Рег. номер декларации на товары</label>
+              <input type="text" class="form-control form-control-sm" id="introduce-declaration-number" placeholder="88888888/010422/7777777">
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Дата регистрации декларации</label>
+              <input type="date" class="form-control form-control-sm" id="introduce-declaration-date">
+            </div>
+          </div>
+          <div id="introduce-russia-hint" class="d-none small text-muted mb-2">
+            <i class="bi bi-info-circle"></i> Для товаров российского производства декларация не нужна. Будут использованы сертификаты из карточки SKU.
+          </div>
+        </div>
+
+        <!-- Импорт с ФТС -->
+        <div id="introduce-fields-import_fts" class="introduce-fields d-none">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Рег. номер ДТ</label>
+            <input type="text" class="form-control form-control-sm" id="introduce-fts-declaration-number" placeholder="50999020/010721/0002040">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Дата регистрации ДТ</label>
+            <input type="date" class="form-control form-control-sm" id="introduce-fts-declaration-date">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Дата производства <small class="text-muted">(необязательно)</small></label>
+            <input type="date" class="form-control form-control-sm" id="introduce-fts-production-date">
+          </div>
+        </div>
+
+        <!-- Разрешительная документация (общая) -->
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Разрешительная документация <small class="text-muted">(необязательно — подтянется из карточки SKU, если есть)</small></label>
+          <div class="row g-2">
+            <div class="col-4">
+              <select class="form-select form-select-sm" id="introduce-cert-type">
+                <option value="">— не указывать —</option>
+                <option value="CONFORMITY_CERTIFICATE">Сертификат соответствия</option>
+                <option value="CONFORMITY_DECLARATION">Декларация о соответствии</option>
+                <option value="STATE_REGISTRATION_CERTIFICATE">Свидетельство о гос. рег.</option>
+                <option value="PERMIT">Разрешение</option>
+                <option value="EXPERTISE_CONCLUSION">Экспертное заключение</option>
+                <option value="PTC_CONCLUSION">Заключение ПТЦ</option>
+              </select>
+            </div>
+            <div class="col">
+              <input type="text" class="form-control form-control-sm" id="introduce-cert-number" placeholder="Номер">
+            </div>
+            <div class="col">
+              <input type="date" class="form-control form-control-sm" id="introduce-cert-date">
+            </div>
+          </div>
+        </div>
+
+        <div id="introduce-error" class="alert alert-danger d-none"></div>
+        <div id="introduce-success" class="alert alert-success d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeIntroduceModal()">Отмена</button>
+        <button type="button" class="btn btn-success" id="introduce-submit-btn" onclick="submitIntroduce()">
+          <i class="bi bi-send"></i> Отправить
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===== ПОДТВЕРЖДЕНИЕ СИНХРОНИЗАЦИИ ===== -->
+<div class="modal fade" id="sync-confirm-modal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header" id="sync-confirm-header">
+        <h5 class="modal-title" id="sync-confirm-title"></h5>
+        <button type="button" class="btn-close" onclick="closeSyncConfirm()"></button>
+      </div>
+      <div class="modal-body">
+        <div id="sync-confirm-icon" class="text-center mb-3" style="font-size:2.5rem"></div>
+        <p id="sync-confirm-message" class="text-center fs-6 mb-0"></p>
+      </div>
+      <div class="modal-footer justify-content-center">
+        <button type="button" class="btn btn-secondary" onclick="closeSyncConfirm()">Отмена</button>
+        <button type="button" class="btn" id="sync-confirm-btn" onclick="confirmSyncAction()"></button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Toast -->
 <div class="toast-container position-fixed bottom-0 end-0 p-3">

@@ -351,7 +351,8 @@ def check_cz_status(cz_codes: list, thumbprint: str = None) -> dict:
         if not clean or len(clean) < 18:
             continue
         clean = clean.replace("\xe8", "").replace("\u001d", "")
-        idx91 = clean.find("91")
+        # Пропускаем GTIN (AI 01 + 14 цифр = 16 символов), чтобы не найти "91" внутри GTIN
+        idx91 = clean.find("91", 16) if len(clean) > 16 else clean.find("91")
         if idx91 > 0:
             clean = clean[:idx91]
         clean = clean.strip()
@@ -827,6 +828,255 @@ def cancel_receipt_document(
                 "error_code": response.status_code,
                 "error_message": error_msg
             }
-            
+
     except requests.exceptions.RequestException as e:
         return {"success": False, "error_code": 0, "error_message": str(e)}
+
+
+# ===== Ввод в оборот =====
+
+INTRODUCTION_TYPES = {
+    "production": {"doc_type": "LP_INTRODUCE_GOODS", "label": "Производство в РФ"},
+    "remains":    {"doc_type": "LP_INTRODUCE_OST",   "label": "Остатки"},
+    "contract":   {"doc_type": "LK_CONTRACT_COMMISSIONING", "label": "Контрактное производство"},
+    "import_fts": {"doc_type": "LP_FTS_INTRODUCE",   "label": "Импорт с ФТС"},
+}
+
+
+def _extract_cis_code(cz_code: str) -> str:
+    """Извлечь КИ (до первого GS) из полного кода ЧЗ."""
+    from app.utils import GS, FNC1
+    parts = cz_code.split(GS)
+    first_part = parts[0] if parts else ""
+    return first_part.lstrip(FNC1)
+
+
+def create_introduction_document(
+    introduction_type: str,
+    unit_ids: list,
+    thumbprint: str = None,
+    form_data: dict = None,
+) -> dict:
+    """
+    Создаёт документ ввода в оборот.
+
+    introduction_type: 'production' | 'remains' | 'contract' | 'import_fts'
+    unit_ids:          список ID единиц (Unit.id)
+    form_data:         данные из формы (depending on type):
+        - production:  {production_date, producer_inn?, owner_inn?, certificate_data?}
+        - remains:     {country, declaration_number, declaration_date, certificate_data?}
+        - contract:    {production_date, producer_inn?, owner_inn?, certificate_data?}
+        - import_fts:  {declaration_number, declaration_date, production_date?}
+    """
+    s = load_settings()
+    if not thumbprint:
+        thumbprint = s.get("cz_cert_thumbprint", "")
+    if not thumbprint:
+        raise Exception("Certificate thumbprint not set. Configure in Settings > Chestny Znak.")
+
+    info = INTRODUCTION_TYPES.get(introduction_type)
+    if not info:
+        raise Exception(f"Unknown introduction type: {introduction_type}")
+
+    form_data = form_data or {}
+
+    product_group_id = s.get("product_group", "27")
+    pg = get_product_group_code(product_group_id)
+    if not pg:
+        raise Exception(f"Could not determine product group code for ID {product_group_id}")
+
+    from app.models import Unit, db
+    units = Unit.query.filter(Unit.id.in_(unit_ids)).all()
+    if not units:
+        raise Exception("No units found")
+
+    inn = s.get("cz_inn", "")
+
+    if introduction_type == "production":
+        producer_inn = form_data.get("producer_inn") or inn
+        owner_inn = form_data.get("owner_inn") or inn
+        production_date = form_data.get("production_date") or datetime.utcnow().strftime("%Y-%m-%d")
+        products = []
+        for u in units:
+            cis = _extract_cis_code(u.cz_code or "")
+            if not cis:
+                continue
+            product = {"uit_code": cis, "tnved_code": u.sku.tnved_code or "0000000000"}
+            cert_data = _build_certificate_data(form_data, u)
+            if cert_data:
+                product["certificate_document_data"] = cert_data
+            products.append(product)
+        doc_body = {
+            "participant_inn": inn,
+            "producer_inn": producer_inn,
+            "owner_inn": owner_inn,
+            "production_date": production_date,
+            "production_type": "OWN_PRODUCTION",
+            "products": products,
+        }
+
+    elif introduction_type == "remains":
+        trade_inn = inn  # всегда ИНН собственника из настроек
+        country = form_data.get("country") or "643"
+        declaration_number = form_data.get("declaration_number") or ""
+        declaration_date = form_data.get("declaration_date") or ""
+        products = []
+        for u in units:
+            cis = _extract_cis_code(u.cz_code or "")
+            if not cis:
+                continue
+            product = {"ki": cis, "country": country}
+            if declaration_number:
+                product["declaration_number"] = declaration_number
+            if declaration_date:
+                product["declaration_date"] = declaration_date
+            cert_data = _build_certificate_data(form_data, u)
+            if cert_data:
+                product["certificate_document_data"] = cert_data
+            products.append(product)
+        doc_body = {
+            "trade_participant_inn": trade_inn,
+            "products_list": products,
+        }
+
+    elif introduction_type == "contract":
+        producer_inn = form_data.get("producer_inn") or inn
+        owner_inn = form_data.get("owner_inn") or inn
+        production_date = form_data.get("production_date") or datetime.utcnow().strftime("%Y-%m-%d")
+        products = []
+        for u in units:
+            cis = _extract_cis_code(u.cz_code or "")
+            if not cis:
+                continue
+            product = {"uit": cis, "tnved_code": u.sku.tnved_code or "0000000000"}
+            cert_data = _build_certificate_data(form_data, u)
+            if cert_data:
+                product["certificate_document_data"] = cert_data
+            products.append(product)
+        doc_body = {
+            "producer_inn": producer_inn,
+            "owner_inn": owner_inn,
+            "production_date": production_date,
+            "production_order": "CONTRACT_PRODUCTION",
+            "products_list": products,
+        }
+
+    elif introduction_type == "import_fts":
+        declaration_number = form_data.get("declaration_number") or ""
+        declaration_date = form_data.get("declaration_date") or ""
+        production_date = form_data.get("production_date") or ""
+        products = []
+        for u in units:
+            cis = _extract_cis_code(u.cz_code or "")
+            if not cis:
+                continue
+            product = {"ki": cis}
+            if production_date:
+                product["production_date"] = production_date
+            products.append(product)
+        doc_body = {
+            "trade_participant_inn": inn,
+            "declaration_number": declaration_number,
+            "declaration_date": declaration_date,
+            "products_list": products,
+        }
+        if production_date:
+            doc_body["production_date"] = production_date
+
+    else:
+        raise Exception(f"Unhandled introduction type: {introduction_type}")
+
+    doc_json = json.dumps(doc_body, ensure_ascii=False, separators=(",", ":"))
+    product_document_b64 = base64.b64encode(doc_json.encode("utf-8")).decode("ascii")
+    signature = _sign_data(doc_json, thumbprint)
+
+    payload = {
+        "document_format": "MANUAL",
+        "product_document": product_document_b64,
+        "type": info["doc_type"],
+        "signature": signature,
+    }
+
+    logging.debug(f"[introduce] type={info['doc_type']} pg={pg}")
+    logging.debug(f"[introduce] doc_body={doc_json[:500]}")
+
+    token = get_uuid_token(thumbprint)
+    base_url = _get_base_url()
+    url = f"{base_url}/lk/documents/create"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+        "accept": "application/json",
+    }
+
+    r = requests.post(url, params={"pg": pg}, json=payload, headers=headers, timeout=60)
+
+    logging.debug(f"[introduce] response status={r.status_code} body={r.text[:500]}")
+
+    if r.status_code == 401:
+        reset_token()
+        token = get_uuid_token(thumbprint)
+        headers["Authorization"] = f"Bearer {token}"
+        r = requests.post(url, params={"pg": pg}, json=payload, headers=headers, timeout=60)
+
+    logging.debug(f"[introduce] final status={r.status_code} body={r.text[:800]}")
+
+    if r.status_code >= 400:
+        return {"success": False, "error_code": r.status_code, "error_message": f"HTTP {r.status_code}: {r.text[:800]}"}
+
+    try:
+        result = r.json()
+        # Проверяем ошибки внутри JSON (API может вернуть 200 с ошибкой)
+        if isinstance(result, dict):
+            err_code = result.get("error_code") or result.get("code")
+            err_msg = result.get("error_message") or result.get("message") or result.get("description")
+            if err_code and str(err_code) != "0":
+                logging.warning(f"[introduce] API error in response: {err_code} {err_msg}")
+                return {"success": False, "error_code": err_code, "error_message": f"{err_msg} (код {err_code})"}
+
+        # Проверяем статус созданного документа
+        doc_id = None
+        if isinstance(result, dict):
+            doc_id = result.get("value") or result.get("document_id") or result.get("id")
+        elif isinstance(result, str):
+            doc_id = result.strip()
+
+        if doc_id:
+            import time
+            time.sleep(2)
+            try:
+                status_result = check_document_status_by_id(str(doc_id), thumbprint=thumbprint, pg=pg)
+                if status_result.get("success"):
+                    doc_data = status_result.get("data", {})
+                    doc_status = doc_data.get("status") or doc_data.get("documentStatus") or ""
+                    if doc_status in ("FAILED", "REJECTED", "ERROR"):
+                        error_detail = doc_data.get("error") or doc_data.get("errorText") or doc_data.get("errorMessage") or str(doc_data)
+                        logging.warning(f"[introduce] Document {doc_id} rejected: {error_detail}")
+                        return {"success": False, "error_code": -1, "error_message": f"Документ отклонён ЧЗ: {error_detail}"}
+                    logging.info(f"[introduce] Document {doc_id} status: {doc_status}")
+            except Exception as e:
+                logging.warning(f"[introduce] Could not check doc status: {e}")
+
+        return {"success": True, "data": result, "doc_type": info["doc_type"]}
+    except Exception:
+        if r.status_code in (200, 201):
+            return {"success": True, "data": {"document_id": r.text.strip()}, "doc_type": info["doc_type"]}
+        return {"success": False, "error_code": r.status_code, "error_message": f"HTTP {r.status_code}: {r.text[:500]}"}
+
+
+def _build_certificate_data(form_data: dict, unit) -> list:
+    """Построить certificate_document_data из данных формы и карточки товара."""
+    # 1. Приоритет — данные из формы (ручной ввод)
+    cert_type = form_data.get("certificate_type") or ""
+    cert_number = form_data.get("certificate_number") or ""
+    cert_date = form_data.get("certificate_date") or ""
+    if cert_type and cert_number and cert_date:
+        return [{"certificate_type": cert_type, "certificate_number": cert_number, "certificate_date": cert_date}]
+    # 2. Структурированные поля из карточки SKU
+    if unit.sku:
+        sku_type = (unit.sku.cert_type or "").strip()
+        sku_number = (unit.sku.cert_number or "").strip()
+        sku_date = (unit.sku.cert_date or "").strip()
+        if sku_type and sku_number:
+            return [{"certificate_type": sku_type, "certificate_number": sku_number, "certificate_date": sku_date or cert_date or datetime.utcnow().strftime("%Y-%m-%d")}]
+    return []

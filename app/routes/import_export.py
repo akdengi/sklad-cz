@@ -383,6 +383,11 @@ def import_json():
             gtin14=s["gtin14"], ean13=s.get("ean13"),
             production_date=s.get("production_date"),
             permit_doc=s.get("permit_doc"),
+            cert_type=s.get("cert_type"),
+            cert_number=s.get("cert_number"),
+            cert_date=s.get("cert_date"),
+            tnved_code=s.get("tnved_code"),
+            contractor_inn=s.get("contractor_inn"),
             total_quantity=s.get("total_quantity", 0),
         ))
     for u in data["units"]:

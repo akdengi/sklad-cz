@@ -129,8 +129,11 @@ def normalize_cz(text: str) -> str:
     elif code[0] == GS:
         code = FNC1 + code[1:]
     code = FNC1 + code[1:].replace(FNC1, GS)
+    # AI 01 + GTIN-14 = FNC1(1) + "01"(2) + GTIN(14) = 17 символов
+    # Ищем "91"/"92" ТОЛЬКО после GTIN, чтобы не вставить GS внутрь GTIN
+    gtin_end = 16  # индекс последнего символа GTIN (0-based, FNC1 на позиции 0)
     for ai in ("91", "92"):
-        idx = code.find(ai)
+        idx = code.find(ai, gtin_end)
         if idx > 0 and code[idx - 1] != GS:
             code = code[:idx] + GS + code[idx:]
     return code

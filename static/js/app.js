@@ -1,4 +1,46 @@
 const STATUSES = ["— не указан —","Эмитирован","Нанесён","В обороте","Продан","Выбыл"];
+
+function validateInn(inn) {
+  if (!inn) return true;
+  const s = String(inn).replace(/\D/g, '');
+  if (s.length !== 10 && s.length !== 12) return false;
+  if (/^0+$/.test(s) || /^(\d)\1+$/.test(s)) return false;
+  if (s.length === 10) {
+    const w = [2,4,10,3,5,9,4,6,8];
+    let sum = 0;
+    for (let i = 0; i < 9; i++) sum += parseInt(s[i]) * w[i];
+    const check = sum % 11 === 10 ? 0 : sum % 11;
+    return check === parseInt(s[9]);
+  }
+  const w1 = [7,2,4,10,3,5,9,4,6,8];
+  const w2 = [3,7,2,4,10,3,5,9,4,6,8];
+  let s1 = 0, s2 = 0;
+  for (let i = 0; i < 10; i++) { s1 += parseInt(s[i]) * w1[i]; s2 += parseInt(s[i]) * w2[i]; }
+  s2 += parseInt(s[10]) * 8;
+  const c1 = s1 % 11 === 10 ? 0 : s1 % 11;
+  const c2 = s2 % 11 === 10 ? 0 : s2 % 11;
+  return c1 === parseInt(s[10]) && c2 === parseInt(s[11]);
+}
+
+function checkInnField(inputEl) {
+  const v = inputEl.value.trim();
+  if (v && !validateInn(v)) {
+    inputEl.classList.add('is-invalid');
+    let hint = inputEl.nextElementSibling;
+    if (!hint || !hint.classList.contains('invalid-feedback')) {
+      hint = document.createElement('div');
+      hint.className = 'invalid-feedback';
+      inputEl.after(hint);
+    }
+    hint.textContent = 'ИНН: 10 или 12 цифр с корректной контрольной суммой';
+    return false;
+  }
+  inputEl.classList.remove('is-invalid');
+  const hint = inputEl.nextElementSibling;
+  if (hint && hint.classList.contains('invalid-feedback')) hint.remove();
+  return true;
+}
+
 const CZ_STATUS_MAP = {
   'EMITTED': 'Эмитирован',
   'APPLIED': 'Нанесён',
@@ -596,17 +638,37 @@ async function openSkuModal(id) {
     document.getElementById('sku-name').value = s.name;
     document.getElementById('sku-article').value = s.article || '';
     document.getElementById('sku-tnved').value = s.tnved_code || '';
+    document.getElementById('sku-contractor-inn').value = s.contractor_inn || '';
+    // Если ИНН фактич. производителя не задан — подтягиваем из настроек
+    if (!s.contractor_inn) {
+      try {
+        const settings = await api('/api/settings/cz');
+        if (settings.cz_inn) document.getElementById('sku-contractor-inn').value = settings.cz_inn;
+      } catch (e) {}
+    }
     document.getElementById('sku-gtin').value = s.gtin14;
     document.getElementById('sku-ean').value = s.ean13 || '';
     document.getElementById('sku-date').value = s.production_date || '';
     document.getElementById('sku-total').value = s.total_quantity || 0;
-    document.getElementById('sku-permit').value = s.permit_doc || '';
+    document.getElementById('sku-cert-type').value = s.cert_type || '';
+    document.getElementById('sku-cert-number').value = s.cert_number || '';
+    document.getElementById('sku-cert-date').value = s.cert_date || '';
+    document.getElementById('sku-cert-type').value = s.cert_type || '';
+    document.getElementById('sku-cert-number').value = s.cert_number || '';
+    document.getElementById('sku-cert-date').value = s.cert_date || '';
     document.getElementById('sku-has-marking').checked = s.has_marking !== false;
   } else {
-    ['sku-name', 'sku-article', 'sku-tnved', 'sku-gtin', 'sku-ean', 'sku-permit'].forEach(id => document.getElementById(id).value = '');
+    ['sku-name', 'sku-article', 'sku-tnved', 'sku-gtin', 'sku-ean', 'sku-cert-type', 'sku-cert-number', 'sku-cert-date'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('sku-date').value = '';
     document.getElementById('sku-total').value = '0';
     document.getElementById('sku-has-marking').checked = true;
+    // Предзаполняем ИНН фактического производителя из настроек
+    try {
+      const s = await api('/api/settings/cz');
+      document.getElementById('sku-contractor-inn').value = s.cz_inn || '';
+    } catch (e) {
+      document.getElementById('sku-contractor-inn').value = '';
+    }
   }
   new bootstrap.Modal(document.getElementById('sku-modal')).show();
 }
@@ -675,15 +737,19 @@ async function saveSku() {
     name: document.getElementById('sku-name').value.trim(),
     article: document.getElementById('sku-article').value.trim(),
     tnved_code: document.getElementById('sku-tnved').value.trim(),
+    contractor_inn: document.getElementById('sku-contractor-inn').value.trim(),
     gtin14: document.getElementById('sku-gtin').value.trim(),
     ean13: document.getElementById('sku-ean').value.trim(),
     production_date: document.getElementById('sku-date').value,
     total_quantity: parseInt(document.getElementById('sku-total').value) || 0,
-    permit_doc: document.getElementById('sku-permit').value.trim(),
+    cert_type: document.getElementById('sku-cert-type').value.trim(),
+    cert_number: document.getElementById('sku-cert-number').value.trim(),
+    cert_date: document.getElementById('sku-cert-date').value,
     has_marking: document.getElementById('sku-has-marking').checked
   };
   if (!data.name) { toast('Укажите название', 'error'); return; }
   if (data.has_marking && !data.gtin14) { toast('Для товара с маркировкой укажите GTIN', 'error'); return; }
+  if (data.contractor_inn && !validateInn(data.contractor_inn)) { toast('ИНН фактического производителя: некорректная контрольная сумма', 'error'); checkInnField(document.getElementById('sku-contractor-inn')); return; }
   try {
     if (editingSkuId) await api(`/api/skus/${editingSkuId}`, { method: 'PUT', body: JSON.stringify(data) });
     else await api('/api/skus', { method: 'POST', body: JSON.stringify(data) });
@@ -1050,8 +1116,9 @@ function normalizeCZ(code) {
   if (code[0] !== FNC1 && code[0] !== GS) code = FNC1 + code;
   else if (code[0] === GS) code = FNC1 + code.slice(1);
   code = FNC1 + code.slice(1).replace(/\xe8/g, GS);
+  const gtinEnd = 16; // FNC1(0) + "01"(1-2) + GTIN-14(3-16)
   for (const ai of ["91", "92"]) {
-    let idx = code.indexOf(ai);
+    let idx = code.indexOf(ai, gtinEnd);
     if (idx > 0 && code[idx - 1] !== GS) {
       code = code.slice(0, idx) + GS + code.slice(idx);
     }
@@ -1137,7 +1204,8 @@ async function showUnitDetail(id) {
   if (!u) { alert('Единица не найдена: id=' + id); return; }
   const full = normalizeCZ(u.cz_code || '');
   const ozon = full.replace(/\xe8/g, '').replace(/\u001d/g, '\\u001d');
-  const turn = full.split('\u001d')[0].replace(/^\xe8/, '');
+  const report = full.replace(/^\xe8/, '');  // полный КИ без FNC1, с GS
+  const turn = full.split('\u001d')[0].replace(/^\xe8/, '');  // краткий — до GS
   let disposalHtml = '';
   if (u.disposal_type && full) {
     disposalHtml = `
@@ -1160,7 +1228,8 @@ async function showUnitDetail(id) {
   const html = `
     <p><strong>SKU:</strong> ${esc(u.sku_name)} &middot; <strong>Артикул:</strong> <span class="text-primary font-monospace fw-semibold">${esc(u.sku_article || '—')}</span></p>
     <p><strong>GTIN-14:</strong> <code>${esc(u.gtin14)}</code> &middot; <strong>EAN-13:</strong> ${esc(u.ean13 || '—')}</p>
-    ${u.sku_permit_doc ? `<p><strong>Разрешительная документация:</strong> ${esc(u.sku_permit_doc)}</p>` : ''}
+    ${u.gtin14 ? `<p><strong>Дата производства:</strong> ${u.production_date || '(не указана)'}</p>` : ''}
+    ${u.sku_cert_type || u.sku_cert_number ? `<p><strong>Разрешит. документация:</strong> ${esc({'CONFORMITY_CERTIFICATE':'Сертификат соответствия','CONFORMITY_DECLARATION':'Декларация о соответствии','STATE_REGISTRATION_CERTIFICATE':'Свидетельство о гос. рег.','PERMIT':'Разрешение','EXPERTISE_CONCLUSION':'Экспертное заключение','PTC_CONCLUSION':'Заключение ПТЦ'}[u.sku_cert_type] || u.sku_cert_type || '')} ${esc(u.sku_cert_number || '')} ${esc(u.sku_cert_date || '')}</p>` : ''}
     <p><strong>ID:</strong> <span class="font-monospace fw-bold">#${u.id}</span> &middot; <strong>Склад:</strong> ${warehouseBadge(u.warehouse_name)} &middot; <strong>Статус:</strong> ${statusBadge(u.status)}</p>
     ${u.cz_status ? `<p><strong>Статус в ЧЗ:</strong> ${czStatusBadge(u.cz_status)} <small class="text-muted">(${esc(u.cz_check_date || '—')})</small> ${full ? `<button class="btn btn-outline-info btn-sm ms-2" onclick="czCheckSingle(${u.id}).then(() => showUnitDetail(${u.id}))"><i class="bi bi-arrow-clockwise"></i> Обновить</button>` : ''}</p>` : (full ? `<p><strong>Статус в ЧЗ:</strong> <span class="text-muted">КМ не найден в ЧЗ</span> <button class="btn btn-outline-info btn-sm ms-2" onclick="czCheckSingle(${u.id}).then(() => showUnitDetail(${u.id}))"><i class="bi bi-arrow-clockwise"></i> Проверить</button></p>` : '')}
     ${u.order_number ? `<p><strong>Номер заказа:</strong> ${esc(u.order_number)}</p>` : ''}
@@ -1182,6 +1251,9 @@ async function showUnitDetail(id) {
       <div class="text-center mb-2"><img src="/api/units/${u.id}/dm-image" alt="DataMatrix КИЗ" style="max-width:200px;border:1px solid #ddd;border-radius:4px" /></div>
       <div class="code-box mb-2">${esc(full).replace(/\xe8/g, '<b class="text-primary">FNC1</b>').replace(/\u001d/g, '<b class="text-danger">GS</b>')}</div>
       <button class="btn btn-outline-secondary btn-sm mb-2" onclick="copyText('${full.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
+      <h6>Код для отчёта о нанесении</h6>
+      <div class="code-box mb-2">${esc(report).replace(/\u001d/g, '<b class="text-danger">GS</b>')}</div>
+      <button class="btn btn-outline-secondary btn-sm mb-2" onclick="copyText('${report.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
       <h6>КМ для Маркетплейсов</h6>
       <div class="code-box mb-2">${esc(ozon)}</div>
       <button class="btn btn-outline-secondary btn-sm mb-2" onclick="copyText('${ozon.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"><i class="bi bi-clipboard"></i> Копировать</button>
@@ -1225,28 +1297,10 @@ async function writeOffUnit(id) {
 // ============ QUICK SELL (CART) ============
 function validateINN(inn) {
   if (!inn) return { valid: false, error: '' };
-  const cleaned = inn.replace(/\s/g, '');
-  if (!/^\d+$/.test(cleaned)) return { valid: false, error: 'ИНН должен содержать только цифры' };
-  if (cleaned.length !== 10 && cleaned.length !== 12) return { valid: false, error: 'ИНН должен быть 10 или 12 цифр' };
-  if (cleaned.length === 10) {
-    const weights = [2, 4, 10, 3, 5, 9, 4, 6, 8];
-    let sum = 0;
-    for (let i = 0; i < 9; i++) sum += parseInt(cleaned[i]) * weights[i];
-    const checkDigit = sum % 11 === 10 ? 0 : sum % 11;
-    if (checkDigit !== parseInt(cleaned[9])) return { valid: false, error: 'Неверная контрольная цифра ИНН' };
-  } else {
-    const weights1 = [7, 2, 4, 10, 3, 5, 9, 4, 6, 8];
-    let sum1 = 0;
-    for (let i = 0; i < 10; i++) sum1 += parseInt(cleaned[i]) * weights1[i];
-    const check11 = sum1 % 11 === 10 ? 0 : sum1 % 11;
-    if (check11 !== parseInt(cleaned[10])) return { valid: false, error: 'Неверная 11-я цифра ИНН' };
-    const weights2 = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8];
-    let sum2 = 0;
-    for (let i = 0; i < 11; i++) sum2 += parseInt(cleaned[i]) * weights2[i];
-    const check12 = sum2 % 11 === 10 ? 0 : sum2 % 11;
-    if (check12 !== parseInt(cleaned[11])) return { valid: false, error: 'Неверная 12-я цифра ИНН' };
-  }
-  return { valid: true };
+  if (validateInn(inn)) return { valid: true };
+  const s = inn.replace(/\D/g, '');
+  if (s.length !== 10 && s.length !== 12) return { valid: false, error: 'ИНН должен быть 10 или 12 цифр' };
+  return { valid: false, error: 'Неверная контрольная цифра ИНН' };
 }
 
 let _innValid = false;
@@ -1741,7 +1795,7 @@ async function renderStock() {
       <td>${warehouseBadge(u.warehouse_name)}</td>
       <td>${statusBadge(u.status)}${u.was_returned ? ' <span class="badge bg-danger"><i class="bi bi-arrow-counterclockwise"></i> Возвраты</span>' : ''}${u.cz_code && u.cz_offline_valid === false ? ' <span class="badge bg-danger" title="Оффлайн-валидация не пройдена"><i class="bi bi-exclamation-triangle"></i></span>' : ''}${u.cz_status && ['BLOCKED', 'UNDEFINED', 'EMPTY'].includes(u.cz_status) ? ' <span class="badge bg-warning text-dark" title="Проблема со статусом в ЧЗ"><i class="bi bi-exclamation-circle"></i></span>' : ''}</td>
       <td>${u.cz_status ? czStatusBadge(u.cz_status) : '<span class="text-muted">—</span>'}</td>
-      <td>${u.cz_code ? `<div class="code-box" style="font-size:10px${u.cz_offline_valid === false ? ';border-color:#e53935;background:#fce4ec' : ''}">${esc(normalizeCZ(u.cz_code).replace(/\xe8/g, '')).replace(/\u001d/g, '<b class="text-danger">␝</b>')}</div>` : '<span class="text-warning"><i class="bi bi-hourglass-split"></i> нет ЧЗ</span>'}</td>
+      <td>${u.cz_code ? `<div class="code-box" style="font-size:10px;cursor:pointer${u.cz_offline_valid === false ? ';border-color:#e53935;background:#fce4ec' : ''}" onclick="copyText('${(normalizeCZ(u.cz_code).replace(/^\xe8/, '')).split('\u001d')[0].replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;')}')" title="Нажмите, чтобы скопировать КМ">${esc((normalizeCZ(u.cz_code).replace(/^\xe8/, '')).split('\u001d')[0])}</div>` : '<span class="text-warning"><i class="bi bi-hourglass-split"></i> нет ЧЗ</span>'}</td>
       <td class="text-nowrap">
         <div class="btn-group btn-group-sm">
           <button class="btn btn-outline-primary" onclick="showUnitDetail(${u.id})" title="Подробнее"><i class="bi bi-info-circle"></i></button>
@@ -2793,20 +2847,61 @@ async function saveSyncSettings() {
   } catch (e) { toast(e.message, 'error'); }
 }
 
+let _syncConfirmAction = null;
+
+function showSyncConfirm({title, icon, iconClass, message, btnText, btnClass, action}) {
+  document.getElementById('sync-confirm-title').textContent = title;
+  document.getElementById('sync-confirm-icon').innerHTML = `<i class="bi ${icon}" style="color:${iconClass}"></i>`;
+  document.getElementById('sync-confirm-message').innerHTML = message;
+  const btn = document.getElementById('sync-confirm-btn');
+  btn.textContent = btnText;
+  btn.className = `btn ${btnClass}`;
+  _syncConfirmAction = action;
+  new bootstrap.Modal(document.getElementById('sync-confirm-modal')).show();
+}
+
+function closeSyncConfirm() {
+  bootstrap.Modal.getInstance(document.getElementById('sync-confirm-modal'))?.hide();
+  _syncConfirmAction = null;
+}
+
+function confirmSyncAction() {
+  closeSyncConfirm();
+  if (_syncConfirmAction) _syncConfirmAction();
+}
+
 async function syncPush() {
-  if (!confirm('Загрузить текущую базу на сервер?\nНа сервере будет создан бэкап перед заменой.')) return;
-  try {
-    await api('/api/sync/push', { method: 'POST', body: JSON.stringify({}) });
-    startSyncPoll('push');
-  } catch (e) { toast(e.message, 'error'); }
+  showSyncConfirm({
+    title: 'Загрузка на сервер',
+    icon: 'bi-cloud-upload',
+    iconClass: '#198754',
+    message: 'Это <strong>перезапишет все данные</strong> на сервере текущей базой.<br>На сервере будет создан бэкап перед заменой.',
+    btnText: 'Загрузить',
+    btnClass: 'btn-success',
+    action: async () => {
+      try {
+        await api('/api/sync/push', { method: 'POST', body: JSON.stringify({}) });
+        startSyncPoll('push');
+      } catch (e) { toast(e.message, 'error'); }
+    }
+  });
 }
 
 async function syncPull() {
-  if (!confirm('Скачать базу с сервера?\nЛокальная база будет заменена (предварительный бэкап создаётся автоматически).\n\nПосле скачивания потребуется перезапуск приложения.')) return;
-  try {
-    await api('/api/sync/pull', { method: 'POST', body: JSON.stringify({}) });
-    startSyncPoll('pull');
-  } catch (e) { toast(e.message, 'error'); }
+  showSyncConfirm({
+    title: 'Скачивание с сервера',
+    icon: 'bi-cloud-download',
+    iconClass: '#0d6efd',
+    message: 'Это действие <strong>уничтожит все текущие изменения</strong> на компьютере.<br>Локальная база будет заменена серверной.<br><small class="text-muted">После скачивания потребуется перезапуск приложения.</small>',
+    btnText: 'Скачать',
+    btnClass: 'btn-primary',
+    action: async () => {
+      try {
+        await api('/api/sync/pull', { method: 'POST', body: JSON.stringify({}) });
+        startSyncPoll('pull');
+      } catch (e) { toast(e.message, 'error'); }
+    }
+  });
 }
 
 function startSyncPoll(direction) {
@@ -2930,3 +3025,274 @@ document.addEventListener('keydown', function(e) {
     return;
   }
 });
+
+
+// ===== CSV ВЫГРУЗКА ВЫДЕЛЕННЫХ =====
+
+function exportSelectedCSV(format) {
+  const ids = [...selectedUnits.stock];
+  if (!ids.length) { toast('Выберите единицы для выгрузки', 'error'); return; }
+  api('/api/units?ids=' + ids.join(',')).then(data => {
+    const units = data.units || [];
+    if (!units.length) { toast('Нет данных', 'error'); return; }
+
+    const reportCode = (cz) => {
+      if (!cz) return '';
+      return normalizeCZ(cz).replace(/^\xe8/, '');
+    };
+    const ozonCode = (cz) => {
+      if (!cz) return '';
+      return normalizeCZ(cz).replace(/\xe8/g, '').replace(/\u001d/g, '\\u001d');
+    };
+    const shortCode = (cz) => {
+      if (!cz) return '';
+      return normalizeCZ(cz).replace(/^\xe8/, '').split('\u001d')[0];
+    };
+
+    let rows, filename;
+    if (format === 'report') {
+      rows = units.map(u => [reportCode(u.cz_code)]);
+      filename = `report_codes_${new Date().toISOString().slice(0,10)}.csv`;
+    } else if (format === 'marketplace') {
+      rows = units.map(u => [ozonCode(u.cz_code)]);
+      filename = `marketplace_codes_${new Date().toISOString().slice(0,10)}.csv`;
+    } else if (format === 'short') {
+      rows = units.map(u => [shortCode(u.cz_code)]);
+      filename = `short_codes_${new Date().toISOString().slice(0,10)}.csv`;
+    } else {
+      rows = [['ID', 'SKU', 'Артикул', 'GTIN-14', 'Код для отчёта', 'Код для маркетплейсов', 'Статус', 'Склад']];
+      for (const u of units) {
+        rows.push([u.id, u.sku_name || '', u.sku_article || '', u.gtin14 || '', reportCode(u.cz_code), ozonCode(u.cz_code), STATUSES[u.status] || u.status, u.warehouse_name || '']);
+      }
+      filename = `units_selected_${new Date().toISOString().slice(0,10)}.csv`;
+    }
+
+    const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast(`Скачано ${units.length} ед.`, 'success');
+  }).catch(e => toast(e.message, 'error'));
+}
+
+
+// ===== ВВОД В ОБОРОТ =====
+
+async function openIntroduceModal() {
+  const ids = [...selectedUnits.stock];
+  if (!ids.length) { toast('Выберите единицы для ввода в оборот', 'error'); return; }
+
+  // Проверяем что все единицы одного SKU и статуса "Нанесён" (2)
+  try {
+    const data = await api('/api/units?ids=' + ids.join(','));
+    const units = data.units || [];
+    const skuIds = [...new Set(units.map(u => u.sku_id))];
+    if (skuIds.length > 1) {
+      toast('Ввод в оборот доступен только для единиц одного SKU. Выберите единицы одного товара.', 'error');
+      return;
+    }
+    const badStatus = units.filter(u => u.status !== 2);
+    if (badStatus.length > 0) {
+      toast(`Ввод в оборот доступен только для статуса «Нанесён». ${badStatus.length} ед. имеют другой статус.`, 'error');
+      return;
+    }
+  } catch (e) {
+    toast('Ошибка проверки: ' + e.message, 'error');
+    return;
+  }
+
+  const preview = document.getElementById('introduce-units-preview');
+  const countEl = document.getElementById('introduce-count');
+  countEl.textContent = ids.length;
+  preview.textContent = `ID: ${ids.slice(0, 10).join(', ')}${ids.length > 10 ? '...' : ''}`;
+
+  // Сбрасываем форму
+  document.getElementById('introduce-type').value = 'production';
+  onIntroduceTypeChange();
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('introduce-production-date').value = today;
+  document.getElementById('introduce-contract-date').value = today;
+  document.getElementById('introduce-remains-inn').value = '';
+  document.getElementById('introduce-country').value = '643';
+  document.getElementById('introduce-declaration-number').value = '';
+  document.getElementById('introduce-declaration-date').value = '';
+  document.getElementById('introduce-fts-declaration-number').value = '';
+  document.getElementById('introduce-fts-declaration-date').value = '';
+  document.getElementById('introduce-fts-production-date').value = '';
+  document.getElementById('introduce-cert-type').value = '';
+  document.getElementById('introduce-cert-number').value = '';
+  document.getElementById('introduce-cert-date').value = '';
+  document.getElementById('introduce-error').classList.add('d-none');
+  document.getElementById('introduce-success').classList.add('d-none');
+  document.getElementById('introduce-submit-btn').disabled = false;
+
+  // Подтягиваем данные SKU и настройки
+  loadIntroducePermitDocs(ids);
+
+  new bootstrap.Modal(document.getElementById('introduce-modal')).show();
+}
+
+async function loadIntroducePermitDocs(ids) {
+  const section = document.getElementById('introduce-permit-doc-section');
+  const info = document.getElementById('introduce-permit-doc-info');
+  try {
+    const [unitsData, settings] = await Promise.all([
+      api('/api/units?ids=' + ids.join(',')),
+      api('/api/settings/cz'),
+    ]);
+    const units = unitsData.units || [];
+
+    // ИНН из настроек — в readonly-поля
+    const inn = settings.cz_inn || '';
+    const innDisplay = document.getElementById('introduce-inn-display');
+    if (innDisplay) innDisplay.value = inn;
+    const innContractOwner = document.getElementById('introduce-contract-owner-inn');
+    if (innContractOwner) innContractOwner.value = inn;
+
+    // Собираем уникальные SKU
+    const skuMap = {};
+    for (const u of units) {
+      const skuName = u.sku_name || `SKU #${u.sku_id}`;
+      const certType = u.sku_cert_type || '';
+      const certNumber = u.sku_cert_number || '';
+      const certDate = u.sku_cert_date || '';
+      const tnved = u.sku_article || '';
+      const contractorInn = u.sku_contractor_inn || '';
+      if (!skuMap[u.sku_id]) skuMap[u.sku_id] = { name: skuName, article: tnved, cert_type: certType, cert_number: certNumber, cert_date: certDate, contractor_inn: contractorInn, count: 0 };
+      skuMap[u.sku_id].count++;
+    }
+    const entries = Object.values(skuMap);
+    if (!entries.length) { section.classList.add('d-none'); return; }
+
+    // Подтягиваем ИНН фактического производителя из первого SKU
+    const firstContractorInn = entries.find(e => e.contractor_inn)?.contractor_inn || '';
+    const contractProducerInn = document.getElementById('introduce-contract-producer-inn');
+    if (contractProducerInn) contractProducerInn.value = firstContractorInn;
+    const remainsInn = document.getElementById('introduce-remains-inn');
+    if (remainsInn) remainsInn.value = inn; // ИНН собственника из настроек
+
+    // Подтягиваем разрешительную документацию из первого SKU
+    const firstSku = entries.find(e => e.cert_number) || entries[0];
+    if (firstSku) {
+      const certTypeEl = document.getElementById('introduce-cert-type');
+      const certNumberEl = document.getElementById('introduce-cert-number');
+      const certDateEl = document.getElementById('introduce-cert-date');
+      if (certTypeEl) certTypeEl.value = firstSku.cert_type || '';
+      if (certNumberEl) certNumberEl.value = firstSku.cert_number || '';
+      if (certDateEl) certDateEl.value = firstSku.cert_date || '';
+    }
+
+    let html = '';
+    for (const s of entries) {
+      html += `<div class="mb-1"><strong>${esc(s.name)}</strong>`;
+      if (s.article) html += ` <span class="text-muted">(${esc(s.article)})</span>`;
+      html += ` × ${s.count}`;
+      if (s.cert_number) {
+        const typeLabels = { 'CONFORMITY_CERTIFICATE': 'Сертификат соответствия', 'CONFORMITY_DECLARATION': 'Декларация о соответствии', 'STATE_REGISTRATION_CERTIFICATE': 'Свидетельство о гос. рег.', 'PERMIT': 'Разрешение', 'EXPERTISE_CONCLUSION': 'Экспертное заключение', 'PTC_CONCLUSION': 'Заключение ПТЦ' };
+        const typeLabel = typeLabels[s.cert_type] || s.cert_type;
+        html += `<br><span class="text-success"><i class="bi bi-check-circle-fill"></i> ${esc(typeLabel)} ${esc(s.cert_number)} ${esc(s.cert_date)}</span>`;
+      } else {
+        html += `<br><span class="text-warning"><i class="bi bi-exclamation-triangle"></i> Разрешительный документ не указан в карточке</span>`;
+      }
+      if (s.contractor_inn) {
+        html += `<br><span class="text-info"><i class="bi bi-building"></i> ИНН контрактного: ${esc(s.contractor_inn)}</span>`;
+      }
+      html += `</div>`;
+    }
+    info.innerHTML = html;
+    section.classList.remove('d-none');
+  } catch (e) {
+    section.classList.add('d-none');
+  }
+}
+
+function closeIntroduceModal() {
+  bootstrap.Modal.getInstance(document.getElementById('introduce-modal'))?.hide();
+}
+
+function onIntroduceTypeChange() {
+  const type = document.getElementById('introduce-type').value;
+  document.querySelectorAll('.introduce-fields').forEach(el => el.classList.add('d-none'));
+  const map = {
+    'production': 'introduce-fields-production',
+    'remains': 'introduce-fields-remains',
+    'contract': 'introduce-fields-contract',
+    'import_fts': 'introduce-fields-import_fts',
+  };
+  const el = document.getElementById(map[type]);
+  if (el) el.classList.remove('d-none');
+  if (type === 'remains') onIntroduceCountryChange();
+}
+
+function onIntroduceCountryChange() {
+  const country = document.getElementById('introduce-country').value.trim();
+  const isRussia = country === '643';
+  document.getElementById('introduce-declaration-fields').classList.toggle('d-none', isRussia);
+  document.getElementById('introduce-russia-hint').classList.toggle('d-none', !isRussia);
+}
+
+async function submitIntroduce() {
+  const ids = [...selectedUnits.stock];
+  if (!ids.length) return;
+
+  const type = document.getElementById('introduce-type').value;
+  const btn = document.getElementById('introduce-submit-btn');
+  const errEl = document.getElementById('introduce-error');
+  const okEl = document.getElementById('introduce-success');
+
+  errEl.classList.add('d-none');
+  okEl.classList.add('d-none');
+  btn.disabled = true;
+
+  const form_data = {};
+  if (type === 'production') {
+    form_data.production_date = document.getElementById('introduce-production-date').value;
+  } else if (type === 'contract') {
+    form_data.production_date = document.getElementById('introduce-contract-date').value;
+    const pin = document.getElementById('introduce-contract-producer-inn').value.trim();
+    if (pin && !validateInn(pin)) { toast('ИНН контрактного производителя: некорректная контрольная сумма', 'error'); btn.disabled = false; return; }
+    if (pin) form_data.producer_inn = pin;
+  } else if (type === 'remains') {
+    form_data.country = document.getElementById('introduce-country').value.trim() || '643';
+    form_data.declaration_number = document.getElementById('introduce-declaration-number').value.trim();
+    form_data.declaration_date = document.getElementById('introduce-declaration-date').value;
+  } else if (type === 'import_fts') {
+    form_data.declaration_number = document.getElementById('introduce-fts-declaration-number').value.trim();
+    form_data.declaration_date = document.getElementById('introduce-fts-declaration-date').value;
+    form_data.production_date = document.getElementById('introduce-fts-production-date').value;
+  }
+
+  // Разрешительная документация
+  const certType = document.getElementById('introduce-cert-type').value;
+  const certNum = document.getElementById('introduce-cert-number').value.trim();
+  const certDate = document.getElementById('introduce-cert-date').value;
+  if (certType && certNum && certDate) {
+    form_data.certificate_type = certType;
+    form_data.certificate_number = certNum;
+    form_data.certificate_date = certDate;
+  }
+
+  try {
+    const r = await api('/api/units/introduce', {
+      method: 'POST',
+      body: JSON.stringify({ introduction_type: type, unit_ids: ids, form_data }),
+    });
+    const docId = r.result?.data?.value || r.result?.data?.document_id || r.result?.data?.id || '—';
+    const docType = r.result?.doc_type || '';
+    const docStatus = r.result?.data?.status || r.result?.data?.documentStatus || '';
+    let msg = `Документ ${docType} создан. ID: ${docId}`;
+    if (docStatus) msg += `. Статус: ${docStatus}`;
+    okEl.textContent = msg;
+    okEl.classList.remove('d-none');
+    btn.disabled = true;
+    clearSelection('stock');
+    setTimeout(() => { renderStock(); }, 2000);
+  } catch (e) {
+    errEl.textContent = e.message || 'Ошибка сети';
+    errEl.classList.remove('d-none');
+    btn.disabled = false;
+  }
+}
