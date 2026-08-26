@@ -663,7 +663,7 @@ def create_receipt_document_route():
             
             return jsonify({
                 "success": True,
-                "document_id": result.get("data", {}),
+                "document_id": doc_id or "",
                 "cz_codes": cz_codes[:50],
                 "units_processed": len(cz_codes),
                 "document_status_info": document_status_info
