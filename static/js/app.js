@@ -2866,8 +2866,9 @@ function closeSyncConfirm() {
 }
 
 function confirmSyncAction() {
+  const action = _syncConfirmAction;
   closeSyncConfirm();
-  if (_syncConfirmAction) _syncConfirmAction();
+  if (action) action();
 }
 
 async function syncPush() {
