@@ -351,8 +351,9 @@ def check_cz_status(cz_codes: list, thumbprint: str = None) -> dict:
         if not clean or len(clean) < 18:
             continue
         clean = clean.replace("\xe8", "").replace("\u001d", "")
-        # Пропускаем GTIN (AI 01 + 14 цифр = 16 символов), чтобы не найти "91" внутри GTIN
-        idx91 = clean.find("91", 16) if len(clean) > 16 else clean.find("91")
+        # Ищем начало зашифрованных данных AI 91 (91EE12),
+        # чтобы не найти "91" внутри GTIN или значения AI 92
+        idx91 = clean.find("91EE12")
         if idx91 > 0:
             clean = clean[:idx91]
         clean = clean.strip()

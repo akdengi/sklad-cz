@@ -561,7 +561,7 @@ def _do_cz_check_all():
             unit_by_code = {}
             for u in units:
                 clean = u.cz_code.replace("\xe8", "").replace("\u001d", "").strip() if u.cz_code else ""
-                idx91 = clean.find("91")
+                idx91 = clean.find("91EE12")
                 if idx91 > 0:
                     clean = clean[:idx91]
                 clean = clean.strip()
@@ -663,7 +663,7 @@ def cz_debug():
         debug["token_prefix"] = token[:16] + "..." if token else "(пусто)"
 
         clean = cz_code.replace("\xe8", "").replace("\u001d", "")
-        idx91 = clean.find("91")
+        idx91 = clean.find("91EE12")
         if idx91 > 0:
             clean = clean[:idx91]
         clean = clean.strip()
