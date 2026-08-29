@@ -462,26 +462,52 @@ def scan_unit():
     cz_code = (data.get("cz_code") or "").strip()
     sku_id = int(data.get("sku_id") or 0)
     warehouse_id = int(data.get("warehouse_id") or 0)
-    status = int(data.get("status") or 1)
+
+    def error_response(msg, code=400):
+        return jsonify({"error": msg}), code
 
     if not cz_code:
-        abort(400, "Код ЧЗ обязателен")
+        return error_response("Код ЧЗ обязателен")
     if not sku_id:
-        abort(400, "SKU обязателен")
+        return error_response("SKU обязателен")
 
     cz_code = normalize_cz(cz_code)
 
     existing = find_duplicate_unit(cz_code)
     if existing:
-        abort(409, f"Код уже существует в единице #{existing.id}")
+        return error_response(f"Код уже существует в единице #{existing.id}", 409)
 
-    # Проверка GTIN: извлекаем GTIN из КМ и сравниваем с выбранным SKU
+    # === Проверка 1: Структура кода ===
+    validation = validate_cz_code(cz_code)
+    if not validation["valid"]:
+        warnings_text = "; ".join(validation["warnings"])
+        return error_response(f"Код не верный: {warnings_text}")
+
+    # === Проверка 2: Онлайн-проверка статуса ЧЗ ===
+    cz_status_raw = None
+    try:
+        from app.cz_api import check_cz_status
+        cz_result = check_cz_status([cz_code])
+        cz_results_list = cz_result.get("results", [])
+        if cz_results_list:
+            entry = cz_results_list[0]
+            info = entry.get("cisInfo", entry)
+            error_code = entry.get("errorCode", "")
+            error_msg = entry.get("errorMessage", "")
+            if error_code and error_code != "0":
+                return error_response(f"Код не верный: {error_msg} (код {error_code})")
+            cz_status_raw = info.get("status") or info.get("cisStatus") or ""
+        else:
+            return error_response("Код не верный: код не найден в базе ЧЗ")
+    except Exception as e:
+        return error_response(f"Код не верный: ошибка проверки ЧЗ — {str(e)}")
+
+    # === Обе проверки пройдены — привязка к SKU и добавление в базу ===
     cz_gtin = extract_gtin_from_cz(cz_code)
     sku = SKU.query.get(sku_id)
     sku_matched = True
     sku_switched = False
     if cz_gtin and sku and sku.gtin14 and cz_gtin != sku.gtin14.strip():
-        # GTIN в КМ не совпадает с выбранным SKU — ищем SKU с подходящим GTIN
         target_sku = SKU.query.filter(SKU.gtin14 == cz_gtin).first()
         if target_sku:
             sku = target_sku
@@ -489,10 +515,8 @@ def scan_unit():
             sku_switched = True
             sku_matched = False
         else:
-            # Нет SKU с таким GTIN — ошибка
-            abort(400, f"КМ относится к товару с GTIN {cz_gtin}, но такого SKU нет в базе данных. Добавление невозможно.")
+            return error_response(f"КМ относится к товару с GTIN {cz_gtin}, но такого SKU нет в базе данных. Добавление невозможно.")
     elif cz_gtin and sku and not sku.gtin14:
-        # У SKU нет GTIN, но КМ содержит GTIN — предупреждаем, но продолжаем
         target_sku = SKU.query.filter(SKU.gtin14 == cz_gtin).first()
         if target_sku:
             sku = target_sku
@@ -500,8 +524,12 @@ def scan_unit():
             sku_switched = True
             sku_matched = False
 
-    sku_gtin14 = sku.gtin14 if sku else None
-    validation = validate_cz_code(cz_code, sku_gtin14=sku_gtin14)
+    # Определяем статус из ЧЗ
+    _CZ_TO_UNIT_STATUS = {
+        'EMITTED': 1, 'APPLIED': 2, 'INTRODUCED': 3, 'INTRODUCED_RETURNED': 3,
+        'RETIRED': 5, 'WITHDRAWN': 5, 'WRITTEN_OFF': 5,
+    }
+    status = _CZ_TO_UNIT_STATUS.get(cz_status_raw, 1)
 
     unit = find_first_unmarked_unit(sku_id, warehouse_id if warehouse_id else None)
     if not unit:
@@ -513,62 +541,31 @@ def scan_unit():
                 cz_code=cz_code,
                 status=status,
                 warehouse_id=warehouse_id or 1,
-                cz_offline_valid=validation["valid"],
+                cz_offline_valid=True,
+                cz_status=cz_status_raw,
+                cz_check_date=datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
             )
             db.session.add(unit)
             db.session.commit()
     else:
         unit.cz_code = cz_code
-        unit.cz_offline_valid = validation["valid"]
+        unit.cz_offline_valid = True
         unit.status = status
+        unit.cz_status = cz_status_raw
+        unit.cz_check_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
         unit.updated_at = datetime.utcnow()
         db.session.commit()
 
-    # Онлайн-проверка статуса ЧЗ сразу после добавления
-    cz_online_result = None
-    try:
-        from app.cz_api import check_cz_status
-        cz_result = check_cz_status([cz_code])
-        cz_results_list = cz_result.get("results", [])
-        if cz_results_list:
-            entry = cz_results_list[0]
-            info = entry.get("cisInfo", entry)
-            error_code = entry.get("errorCode", "")
-            error_msg = entry.get("errorMessage", "")
-            if error_code and error_code != "0":
-                cz_online_result = {"ok": False, "error": f"{error_msg} (код {error_code})"}
-                unit.cz_check_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
-                unit.cz_status = None
-            else:
-                cz_status_raw = info.get("status") or info.get("cisStatus") or ""
-                unit.cz_status = cz_status_raw
-                unit.cz_check_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
-                new_status_val = None
-                _CZ_TO_UNIT_STATUS = {
-                    'EMITTED': 1, 'APPLIED': 2, 'INTRODUCED': 3, 'INTRODUCED_RETURNED': 3,
-                    'RETIRED': 5, 'WITHDRAWN': 5, 'WRITTEN_OFF': 5,
-                }
-                new_status_val = _CZ_TO_UNIT_STATUS.get(cz_status_raw)
-                if new_status_val is not None and new_status_val > unit.status:
-                    unit.status = new_status_val
-                if cz_status_raw in ('RETIRED', 'WITHDRAWN', 'WRITTEN_OFF'):
-                    unit.disposal_status = 1
-                cz_online_result = {"ok": True, "cz_status": cz_status_raw}
-        else:
-            cz_online_result = {"ok": False, "error": "Код не найден в ЧЗ"}
-            unit.cz_check_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
-            unit.cz_status = None
+    if cz_status_raw in ('RETIRED', 'WITHDRAWN', 'WRITTEN_OFF'):
+        unit.disposal_status = 1
         db.session.commit()
-    except Exception as e:
-        cz_online_result = {"ok": False, "error": f"Ошибка проверки ЧЗ: {str(e)}"}
 
     result = {
         "unit_id": unit.id,
         "sku_name": unit.sku.name if unit.sku else None,
         "sku_id": unit.sku_id,
-        "created": unit.status == status and not unit.updated_at or unit.updated_at == unit.created_at,
-        "validation": validation,
-        "cz_online": cz_online_result,
+        "status": status,
+        "cz_status": cz_status_raw,
     }
     if not sku_matched:
         result["sku_switched"] = True

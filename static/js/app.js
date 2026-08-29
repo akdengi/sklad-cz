@@ -815,11 +815,10 @@ async function processScan() {
   if (!cz) { toast('Введите код ЧЗ', 'error'); return; }
   const skuId = parseInt(document.getElementById('scan-sku').value);
   const warehouseId = parseInt(document.getElementById('scan-warehouse').value);
-  const status = parseInt(document.getElementById('scan-status').value);
   const resultDiv = document.getElementById('scan-result');
   const historyDiv = document.getElementById('scan-history');
   try {
-    const r = await api('/api/units/scan', { method: 'POST', body: JSON.stringify({ cz_code: cz, sku_id: skuId, warehouse_id: warehouseId, status }) });
+    const r = await api('/api/units/scan', { method: 'POST', body: JSON.stringify({ cz_code: cz, sku_id: skuId, warehouse_id: warehouseId }) });
     scanCount++;
     document.getElementById('scan-counter').textContent = scanCount;
 
@@ -832,33 +831,16 @@ async function processScan() {
     }
 
     // Результат привязки
-    const createdLabel = r.created ? ' (создана)' : '';
-    resultHtml += `<div class="alert alert-success"><i class="bi bi-check-circle"></i> Код привязан к единице #${r.unit_id} (${esc(r.sku_name)})${createdLabel}</div>`;
-
-    // Оффлайн-валидация
-    if (r.validation && !r.validation.valid) {
-      resultHtml += `<div class="alert alert-warning mt-2"><i class="bi bi-exclamation-triangle"></i> <strong>Оффлайн-валидация:</strong><ul class="mb-0 mt-1">${r.validation.warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul></div>`;
-    }
-
-    // Результат онлайн-проверки ЧЗ
-    if (r.cz_online) {
-      if (r.cz_online.ok) {
-        const czStatusMap = {'EMITTED':'Эмитирован','APPLIED':'Нанесён','INTRODUCED':'В обороте','INTRODUCED_RETURNED':'Возвращён в оборот','RETIRED':'Выбыл','WITHDRAWN':'Выбыл','WRITTEN_OFF':'Списан','REAPPLY':'Повторное нанесение','BLOCKED':'Заблокирован'};
-        const statusName = czStatusMap[r.cz_online.cz_status] || r.cz_online.cz_status;
-        resultHtml += `<div class="alert alert-info mt-2"><i class="bi bi-check-circle"></i> <strong>Статус ЧЗ:</strong> ${esc(statusName)}</div>`;
-      } else {
-        resultHtml += `<div class="alert alert-danger mt-2"><i class="bi bi-x-circle"></i> <strong>Ошибка проверки ЧЗ:</strong> ${esc(r.cz_online.error || 'Неизвестная ошибка')}</div>`;
-      }
-    }
+    const czStatusMap = {'EMITTED':'Эмитирован','APPLIED':'Нанесён','INTRODUCED':'В обороте','INTRODUCED_RETURNED':'Возвращён в оборот','RETIRED':'Выбыл','WITHDRAWN':'Выбыл','WRITTEN_OFF':'Списан','REAPPLY':'Повторное нанесение','BLOCKED':'Заблокирован'};
+    const statusName = czStatusMap[r.cz_status] || r.cz_status || 'Неизвестен';
+    resultHtml += `<div class="alert alert-success"><i class="bi bi-check-circle"></i> Код привязан к единице #${r.unit_id} (${esc(r.sku_name)}) — <strong>${esc(statusName)}</strong></div>`;
 
     resultDiv.innerHTML = resultHtml;
 
     let histClass = 'text-success';
-    if (r.cz_online && !r.cz_online.ok) histClass = 'text-danger';
-    else if (r.validation && !r.validation.valid) histClass = 'text-warning';
-    else if (r.sku_switched) histClass = 'text-info';
+    if (r.sku_switched) histClass = 'text-info';
 
-    historyDiv.innerHTML = `<div class="scan-history-item ${histClass}">#${scanCount} &rarr; Ед. #${r.unit_id}${r.sku_switched ? ' ⚡' : ''}${(r.cz_online && !r.cz_online.ok) ? ' ✗' : (r.validation && !r.validation.valid) ? ' ⚠' : ''}</div>` + historyDiv.innerHTML;
+    historyDiv.innerHTML = `<div class="scan-history-item ${histClass}">#${scanCount} &rarr; Ед. #${r.unit_id} — ${esc(statusName)}${r.sku_switched ? ' ⚡' : ''}</div>` + historyDiv.innerHTML;
 
     document.getElementById('scan-cz').value = '';
     document.getElementById('scan-cz').focus();
@@ -869,11 +851,7 @@ async function processScan() {
     }
 
     // Toast-уведомления
-    if (r.cz_online && !r.cz_online.ok) {
-      toast(`Код привязан, но ошибка проверки ЧЗ: ${r.cz_online.error || 'Неизвестная ошибка'}`, 'error');
-    } else if (r.validation && !r.validation.valid) {
-      toast(`Код привязан, но есть предупреждения оффлайн-валидации`, 'warning');
-    } else if (r.sku_switched) {
+    if (r.sku_switched) {
       toast(`Код привязан к другому SKU (GTIN не совпадал)`, 'warning');
     } else {
       toast(`Отсканировано: ${scanCount}`, 'success');
