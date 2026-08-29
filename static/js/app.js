@@ -824,38 +824,18 @@ async function processScan() {
 
     let resultHtml = '';
 
-    // Предупреждение о смене SKU
-    if (r.sku_switched) {
-      const warningMsg = r.sku_warning || r.sku_info || '';
-      resultHtml += `<div class="alert alert-warning mt-2"><i class="bi bi-arrow-left-right"></i> <strong>${esc(warningMsg)}</strong></div>`;
-    }
-
     // Результат привязки
     const czStatusMap = {'EMITTED':'Эмитирован','APPLIED':'Нанесён','INTRODUCED':'В обороте','INTRODUCED_RETURNED':'Возвращён в оборот','RETIRED':'Выбыл','WITHDRAWN':'Выбыл','WRITTEN_OFF':'Списан','REAPPLY':'Повторное нанесение','BLOCKED':'Заблокирован'};
     const statusName = czStatusMap[r.cz_status] || r.cz_status || 'Неизвестен';
     resultHtml += `<div class="alert alert-success"><i class="bi bi-check-circle"></i> Код привязан к единице #${r.unit_id} (${esc(r.sku_name)}) — <strong>${esc(statusName)}</strong></div>`;
 
     resultDiv.innerHTML = resultHtml;
-
-    let histClass = 'text-success';
-    if (r.sku_switched) histClass = 'text-info';
-
-    historyDiv.innerHTML = `<div class="scan-history-item ${histClass}">#${scanCount} &rarr; Ед. #${r.unit_id} — ${esc(statusName)}${r.sku_switched ? ' ⚡' : ''}</div>` + historyDiv.innerHTML;
+    historyDiv.innerHTML = `<div class="scan-history-item text-success">#${scanCount} &rarr; Ед. #${r.unit_id} — ${esc(statusName)}</div>` + historyDiv.innerHTML;
 
     document.getElementById('scan-cz').value = '';
     document.getElementById('scan-cz').focus();
 
-    // Обновляем селект SKU если был сменён
-    if (r.sku_switched && r.sku_id) {
-      document.getElementById('scan-sku').value = r.sku_id;
-    }
-
-    // Toast-уведомления
-    if (r.sku_switched) {
-      toast(`Код привязан к другому SKU (GTIN не совпадал)`, 'warning');
-    } else {
-      toast(`Отсканировано: ${scanCount}`, 'success');
-    }
+    toast(`Отсканировано: ${scanCount}`, 'success');
   } catch (e) {
     resultDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> ${esc(e.message)}</div>`;
     historyDiv.innerHTML = `<div class="scan-history-item text-danger">#${scanCount + 1} &rarr; Ошибка: ${esc(e.message)}</div>` + historyDiv.innerHTML;

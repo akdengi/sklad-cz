@@ -505,24 +505,12 @@ def scan_unit():
     # === Обе проверки пройдены — привязка к SKU и добавление в базу ===
     cz_gtin = extract_gtin_from_cz(cz_code)
     sku = SKU.query.get(sku_id)
-    sku_matched = True
-    sku_switched = False
     if cz_gtin and sku and sku.gtin14 and cz_gtin != sku.gtin14.strip():
-        target_sku = SKU.query.filter(SKU.gtin14 == cz_gtin).first()
-        if target_sku:
-            sku = target_sku
-            sku_id = target_sku.id
-            sku_switched = True
-            sku_matched = False
-        else:
-            return error_response(f"КМ относится к товару с GTIN {cz_gtin}, но такого SKU нет в базе данных. Добавление невозможно.")
+        return error_response(f"GTIN в КМ ({cz_gtin}) не совпадает с выбранным SKU (GTIN {sku.gtin14}). Выберите правильный SKU.")
     elif cz_gtin and sku and not sku.gtin14:
         target_sku = SKU.query.filter(SKU.gtin14 == cz_gtin).first()
         if target_sku:
-            sku = target_sku
-            sku_id = target_sku.id
-            sku_switched = True
-            sku_matched = False
+            return error_response(f"GTIN в КМ ({cz_gtin}) не совпадает с выбранным SKU. Выберите SKU «{target_sku.name}» (GTIN {cz_gtin}).")
 
     # Определяем статус из ЧЗ
     _CZ_TO_UNIT_STATUS = {
@@ -567,14 +555,6 @@ def scan_unit():
         "status": status,
         "cz_status": cz_status_raw,
     }
-    if not sku_matched:
-        result["sku_switched"] = True
-        result["original_sku_id"] = int(data.get("sku_id") or 0)
-        result["sku_warning"] = f"GTIN в КМ ({cz_gtin}) не совпадает с выбранным SKU. Код привязан к SKU «{sku.name}» (GTIN {cz_gtin})"
-    elif sku_switched:
-        result["sku_switched"] = True
-        result["original_sku_id"] = int(data.get("sku_id") or 0)
-        result["sku_info"] = f"Код привязан к SKU «{sku.name}» (GTIN {cz_gtin})"
     return result
 
 
