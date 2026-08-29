@@ -1144,7 +1144,13 @@ async function saveUnit() {
 }
 
 async function deleteUnit(id) {
-  if (!confirm('Удалить единицу?')) return;
+  document.getElementById('delete-unit-id').value = id;
+  new bootstrap.Modal(document.getElementById('delete-unit-modal')).show();
+}
+
+async function processDeleteUnit() {
+  const id = document.getElementById('delete-unit-id').value;
+  bootstrap.Modal.getInstance(document.getElementById('delete-unit-modal')).hide();
   await api(`/api/units/${id}`, { method: 'DELETE' }); render();
 }
 
