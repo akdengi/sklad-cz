@@ -115,12 +115,12 @@ def normalize_cz(text: str) -> str:
     code = code.replace("FNC1", FNC1)
     code = code.replace("\\GS\\", GS).replace("\\gs\\", GS)
     # Заменяем текстовый "GS" между AI на настоящий GS-символ
-    # Ищем "GS" перед известными AI (01, 21, 91, 92)
+    # Ищем "GS" перед известными AI (01, 21, 91) — 92 обрабатывается условно ниже
     import re
-    code = re.sub(r'(?<=\d)GS(?=01|21|91|92)', GS, code)
-    code = re.sub(r'(?<=[A-Za-z0-9+/=])GS(?=01|21|91|92)', GS, code)
-    # Общая замена оставшихся "GS" которые стоят перед AI
-    code = re.sub(r'GS(?=\d{2})', GS, code)
+    code = re.sub(r'(?<=\d)GS(?=01|21|91)', GS, code)
+    code = re.sub(r'(?<=[A-Za-z0-9+/=])GS(?=01|21|91)', GS, code)
+    # Общая замена оставшихся "GS" которые стоят перед AI (кроме 92 — GS перед 92 добавляется ниже условно)
+    code = re.sub(r'GS(?!92)(?=\d{2})', GS, code)
     code = code.strip()
     if not code:
         return code
@@ -139,13 +139,23 @@ def normalize_cz(text: str) -> str:
         before = code[max(0, idx92 - 8):idx92]
         if before.endswith(GS + "91EE12"):
             code = code[:idx92] + GS + code[idx92:]
+    # Валидация: GS91 должен образовывать группу GS91EE12GS92
+    gs91_idx = code.find(GS + "91", 16)
+    if gs91_idx >= 0:
+        after_91 = code[gs91_idx + 3:gs91_idx + 12]
+        # Структурная проверка: после GS91 идёт EE12, затем GS, затем 92
+        if not (after_91[:4] == "EE12" and after_91[4] == GS and after_91[5:7] == "92"):
+            raise ValueError(
+                f"Некорректный формат КМ: группа после AI 91 должна быть «GS91EE12GS92», "
+                f"получено «GS91{after_91.replace(GS, 'GS')}»"
+            )
     return code
 
 
 def cz_search_prefix(cz_code: str) -> str:
     if not cz_code:
         return cz_code
-    idx = cz_code.find("91")
+    idx = cz_code.find("91", 16)
     if idx > 0:
         return cz_code[:idx]
     return cz_code

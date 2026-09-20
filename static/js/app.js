@@ -1051,7 +1051,7 @@ async function czCheckFromEdit() {
 function extractShortCZ(code) {
   if (!code) return code;
   const clean = code.replace(/\s/g, '');
-  const idx = clean.indexOf('91');
+  const idx = clean.indexOf('91', 16);
   if (idx > 0) return clean.substring(0, idx);
   return clean;
 }
@@ -1069,16 +1069,35 @@ function normalizeCZ(code) {
   // Текстовые литералы → реальные символы
   code = code.replace(/FNC1/g, FNC1);
   // Заменяем текстовый "GS" перед AI-кодами на настоящий GS-символ
-  code = code.replace(/GS(?=01|21|91|92)/g, GS);
+  code = code.replace(/GS(?=01|21|91)/g, GS);
   if (!code) return code;
   if (code[0] !== FNC1 && code[0] !== GS) code = FNC1 + code;
   else if (code[0] === GS) code = FNC1 + code.slice(1);
   code = FNC1 + code.slice(1).replace(/\xe8/g, GS);
   const gtinEnd = 16; // FNC1(0) + "01"(1-2) + GTIN-14(3-16)
-  for (const ai of ["91", "92"]) {
-    let idx = code.indexOf(ai, gtinEnd);
-    if (idx > 0 && code[idx - 1] !== GS) {
-      code = code.slice(0, idx) + GS + code.slice(idx);
+  // GS перед "91" — всегда
+  let idx91 = code.indexOf("91", gtinEnd);
+  if (idx91 > 0 && code[idx91 - 1] !== GS) {
+    code = code.slice(0, idx91) + GS + code.slice(idx91);
+  }
+  // GS перед "92" — ТОЛЬКО если перед ним GS91EE12 (AI 92 после AI 91)
+  let idx92 = code.indexOf("92", gtinEnd);
+  if (idx92 > 0 && code[idx92 - 1] !== GS) {
+    const before92 = code.slice(Math.max(0, idx92 - 8), idx92);
+    if (before92.endsWith(GS + "91EE12")) {
+      code = code.slice(0, idx92) + GS + code.slice(idx92);
+    }
+  }
+  // Валидация: GS91 должен образовывать группу GS91EE12GS92
+  const gs91Idx = code.indexOf(GS + "91", gtinEnd);
+  if (gs91Idx >= 0) {
+    const after91 = code.substring(gs91Idx + 3, gs91Idx + 12);
+    // Структурная проверка: после GS91 идёт EE12, затем GS, затем 92
+    if (!(after91.substring(0, 4) === "EE12" && after91[4] === GS && after91.substring(5, 7) === "92")) {
+      throw new Error(
+        `Некорректный формат КМ: группа после AI 91 должна быть «GS91EE12GS92», ` +
+        `получено «GS91${after91.replace(/\u001d/g, 'GS')}»`
+      );
     }
   }
   return code;
