@@ -355,10 +355,39 @@ def delete_sale(uid):
 
         u.updated_at = datetime.utcnow()
 
+    # Проверка статуса Честного Знака после возврата на склад
+    target = source_unit or u
+    if target.cz_code:
+        try:
+            from app.cz_api import check_cz_status
+            cz_result = check_cz_status([target.cz_code])
+            if cz_result and cz_result.get("results"):
+                entry = cz_result["results"][0]
+                info = entry.get("cisInfo", entry)
+                status_raw = info.get("status") or info.get("cisStatus") or ""
+                target.cz_status = status_raw or None
+                target.cz_check_date = datetime.utcnow().isoformat()
+                # Обновляем локальный статус по результатам ЧЗ
+                _CZ_TO_UNIT_STATUS = {
+                    'EMITTED': 1, 'APPLIED': 2, 'INTRODUCED': 3, 'INTRODUCED_RETURNED': 3,
+                    'RETIRED': 5, 'WITHDRAWN': 5, 'WRITTEN_OFF': 5,
+                }
+                new_status_val = _CZ_TO_UNIT_STATUS.get(status_raw)
+                if new_status_val is not None:
+                    target.status = new_status_val
+        except Exception:
+            pass
+
     db.session.commit()
+    cz_msg = ""
+    if target.cz_code:
+        if target.cz_status in ('RETIRED', 'WITHDRAWN', 'WRITTEN_OFF'):
+            cz_msg = " Отчёт о выбытии в ЧЗ активен — подайте отчёт о возврате в ЛК Честный Знак."
+        elif target.cz_status in ('INTRODUCED', 'INTRODUCED_RETURNED', 'APPLIED', 'EMITTED'):
+            cz_msg = " Статус в ЧЗ: " + (target.cz_status or '—') + "."
     return jsonify({
         "unit": (source_unit or u).to_dict(),
-        "message": "Продажа удалена. Товар возвращен на склад. Если отчет о выбытии был подан в ЧЗ — подайте отчет о возврате.",
+        "message": "Продажа удалена. Товар возвращен на склад." + cz_msg,
     })
 
 
