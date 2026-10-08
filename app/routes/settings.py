@@ -85,6 +85,10 @@ def list_backups():
     for f in sorted(BACKUPS_DIR.glob("backup_*.db"), key=_backup_sort_key, reverse=True):
         stat = f.stat()
         dt = _parse_backup_date(f.name)
+        if dt == datetime.min:
+            # Имя не по шаблону backup_YYYYMMDD_HHMMSS — берём дату файла,
+            # иначе dt.timestamp() на datetime.min падает и роняет весь список.
+            dt = datetime.fromtimestamp(stat.st_mtime)
         backups.append({
             "filename": f.name,
             "size": stat.st_size,
