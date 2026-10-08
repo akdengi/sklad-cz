@@ -21,7 +21,10 @@ def validate_all_units():
     for u in units:
         if u.cz_code:
             sku_gtin14 = u.sku.gtin14 if u.sku else None
-            validation = validate_cz_code(u.cz_code, sku_gtin14=sku_gtin14)
+            try:
+                validation = validate_cz_code(u.cz_code, sku_gtin14=sku_gtin14)
+            except Exception:
+                validation = {"valid": False, "warnings": ["Не удалось разобрать код ЧЗ"]}
             u.cz_offline_valid = validation["valid"]
             if not validation["valid"]:
                 invalid.append({
@@ -75,21 +78,26 @@ def get_units():
     if request.args.get("no_cz"):
         q = q.filter(or_(Unit.cz_code == None, Unit.cz_code == ''))
     if request.args.get("q"):
-        raw_q = request.args['q'].lstrip('#').strip()
-        term = f"%{raw_q}%"
-        norm_q = normalize_cz(raw_q)
-        search_prefix = cz_search_prefix(norm_q)
-        q = q.join(SKU).filter(
-            or_(
-                Unit.cz_code.like(f"{search_prefix}%"),
-                Unit.cz_code.like(f"%{norm_q}%"),
-                Unit.cz_code.like(f"%{raw_q}%"),
-                Unit.order_number.ilike(term),
-                SKU.name.ilike(term),
-                SKU.article.ilike(term),
-                Unit.id.cast(db.String).ilike(term),
+        raw_q = request.args['q'].strip()
+        if raw_q.startswith('#'):
+            id_part = raw_q[1:].strip()
+            if id_part.isdigit():
+                q = q.filter(Unit.id == int(id_part))
+        if not raw_q.startswith('#'):
+            term = f"%{raw_q}%"
+            norm_q = normalize_cz(raw_q)
+            search_prefix = cz_search_prefix(norm_q)
+            q = q.join(SKU).filter(
+                or_(
+                    Unit.cz_code.like(f"{search_prefix}%"),
+                    Unit.cz_code.like(f"%{norm_q}%"),
+                    Unit.cz_code.like(f"%{raw_q}%"),
+                    Unit.order_number.ilike(term),
+                    SKU.name.ilike(term),
+                    SKU.article.ilike(term),
+                    Unit.id.cast(db.String).ilike(term),
+                )
             )
-        )
 
     sort_field = request.args.get("sort", "id")
     sort_dir = request.args.get("order", "desc").lower()
@@ -108,8 +116,11 @@ def get_units():
     for u in units:
         if u.cz_code and u.cz_offline_valid is None:
             sku_gtin14 = u.sku.gtin14 if u.sku else None
-            v = validate_cz_code(u.cz_code, sku_gtin14=sku_gtin14)
-            u.cz_offline_valid = v["valid"]
+            try:
+                v = validate_cz_code(u.cz_code, sku_gtin14=sku_gtin14)
+                u.cz_offline_valid = v["valid"]
+            except Exception:
+                u.cz_offline_valid = False
             dirty = True
     if dirty:
         db.session.commit()
@@ -200,6 +211,7 @@ def find_by_code():
 @units_bp.route("/sold", methods=["GET"])
 def get_sold_units():
     q = Unit.query.options(joinedload(Unit.sku), joinedload(Unit.warehouse))
+    q = q.join(SKU)
     q = q.filter(Unit.status.in_([4, 5]))
     if request.args.get("sku_id"):
         q = q.filter(Unit.sku_id == int(request.args["sku_id"]))
@@ -211,21 +223,26 @@ def get_sold_units():
         q = q.filter(Unit.sold_date <= request.args["date_to"])
 
     if request.args.get("q"):
-        raw_q = request.args['q'].lstrip('#').strip()
-        term = f"%{raw_q}%"
-        norm_q = normalize_cz(raw_q)
-        search_prefix = cz_search_prefix(norm_q)
-        q = q.join(SKU).filter(
-            or_(
-                Unit.cz_code.like(f"{search_prefix}%"),
-                Unit.cz_code.like(f"%{norm_q}%"),
-                Unit.cz_code.like(f"%{raw_q}%"),
-                Unit.order_number.ilike(term),
-                SKU.name.ilike(term),
-                SKU.article.ilike(term),
-                Unit.id.cast(db.String).ilike(term),
+        raw_q = request.args['q'].strip()
+        if raw_q.startswith('#'):
+            id_part = raw_q[1:].strip()
+            if id_part.isdigit():
+                q = q.filter(Unit.id == int(id_part))
+        if not raw_q.startswith('#'):
+            term = f"%{raw_q}%"
+            norm_q = normalize_cz(raw_q)
+            search_prefix = cz_search_prefix(norm_q)
+            q = q.filter(
+                or_(
+                    Unit.cz_code.like(f"{search_prefix}%"),
+                    Unit.cz_code.like(f"%{norm_q}%"),
+                    Unit.cz_code.like(f"%{raw_q}%"),
+                    Unit.order_number.ilike(term),
+                    SKU.name.ilike(term),
+                    SKU.article.ilike(term),
+                    Unit.id.cast(db.String).ilike(term),
+                )
             )
-        )
 
     sort = request.args.get("sort", "date_desc")
     sort_map = {
@@ -411,21 +428,26 @@ def get_disposal_units():
     if request.args.get("date_to"):
         q = q.filter(Unit.sold_date <= request.args["date_to"])
     if request.args.get("q"):
-        raw_q = request.args['q'].lstrip('#').strip()
-        term = f"%{raw_q}%"
-        norm_q = normalize_cz(raw_q)
-        search_prefix = cz_search_prefix(norm_q)
-        q = q.filter(
-            or_(
-                Unit.cz_code.like(f"{search_prefix}%"),
-                Unit.cz_code.like(f"%{norm_q}%"),
-                Unit.cz_code.like(f"%{raw_q}%"),
-                Unit.order_number.ilike(term),
-                SKU.name.ilike(term),
-                SKU.article.ilike(term),
-                Unit.id.cast(db.String).ilike(term),
+        raw_q = request.args['q'].strip()
+        if raw_q.startswith('#'):
+            id_part = raw_q[1:].strip()
+            if id_part.isdigit():
+                q = q.filter(Unit.id == int(id_part))
+        if not raw_q.startswith('#'):
+            term = f"%{raw_q}%"
+            norm_q = normalize_cz(raw_q)
+            search_prefix = cz_search_prefix(norm_q)
+            q = q.filter(
+                or_(
+                    Unit.cz_code.like(f"{search_prefix}%"),
+                    Unit.cz_code.like(f"%{norm_q}%"),
+                    Unit.cz_code.like(f"%{raw_q}%"),
+                    Unit.order_number.ilike(term),
+                    SKU.name.ilike(term),
+                    SKU.article.ilike(term),
+                    Unit.id.cast(db.String).ilike(term),
+                )
             )
-        )
     sort = request.args.get("sort", "date_desc")
     sort_map = {
         "id_asc": Unit.id.asc(), "id_desc": Unit.id.desc(),
