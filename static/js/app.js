@@ -1060,6 +1060,34 @@ function stripCZCrypto(code) {
   return extractShortCZ(code);
 }
 
+function splitCZBody(body) {
+  // Структура КМ: 01+GTIN(14), 21+серийный номер, 91+ключ(4), 92+криптохвост(44).
+  // Позиция AI 91 считается от конца, поэтому серийник, содержащий «91», разбирается верно.
+  if (body.length < 70 || !body.startsWith('01') || body.slice(16, 18) !== '21') return null;
+  if (!/^\d{14}$/.test(body.slice(2, 16))) return null;
+  const crypto = body.slice(-44);
+  if (!/^[A-Za-z0-9+/=]{44}$/.test(crypto)) return null;
+  const ai92 = body.length - 46;
+  const ai91 = ai92 - 6; // GS 91 + 4-символьный ключ
+  if (ai91 <= 18 || body.slice(ai91, ai91 + 2) !== '91' || body.slice(ai92, ai92 + 2) !== '92') return null;
+  return { gtin: body.slice(2, 16), serial: body.slice(18, ai91), key: body.slice(ai91 + 2, ai92), ai91, ai92 };
+}
+
+function pickCZBody(body) {
+  // Серийный номер (13 символов) может содержать две кавычки подряд, поэтому
+  // замены «""»→«"» и «\"»→«"» нельзя делать вслепую — они стирают вторую
+  // кавычку. Раскрытие применяем, только если оно приближает длину серийного
+  // номера к канонической (так приходят экранированные выгрузки).
+  const cz = splitCZBody(body);
+  const unescaped = body.replace(/""/g, '"').replace(/\\"/g, '"');
+  if (unescaped === body) return body;
+  const czUnescaped = splitCZBody(unescaped);
+  if (!czUnescaped) return body;
+  if (!cz) return unescaped;
+  if (Math.abs(czUnescaped.serial.length - 13) < Math.abs(cz.serial.length - 13)) return unescaped;
+  return body;
+}
+
 function normalizeCZ(code) {
   const FNC1 = "\xe8";
   const GS = "\u001d";
@@ -1068,39 +1096,17 @@ function normalizeCZ(code) {
   code = code.replace(/\u241d/g, GS);
   // Текстовые литералы → реальные символы
   code = code.replace(/FNC1/g, FNC1);
-  // Заменяем текстовый "GS" перед AI-кодами на настоящий GS-символ
-  code = code.replace(/GS(?=01|21|91)/g, GS);
+  code = code.replace(/GS(?=\d{2})/g, GS);
   if (!code) return code;
   if (code[0] !== FNC1 && code[0] !== GS) code = FNC1 + code;
   else if (code[0] === GS) code = FNC1 + code.slice(1);
   code = FNC1 + code.slice(1).replace(/\xe8/g, GS);
-  const gtinEnd = 16; // FNC1(0) + "01"(1-2) + GTIN-14(3-16)
-  // GS перед "91" — всегда
-  let idx91 = code.indexOf("91", gtinEnd);
-  if (idx91 > 0 && code[idx91 - 1] !== GS) {
-    code = code.slice(0, idx91) + GS + code.slice(idx91);
-  }
-  // GS перед "92" — ТОЛЬКО если перед ним GS91EE12 (AI 92 после AI 91)
-  let idx92 = code.indexOf("92", gtinEnd);
-  if (idx92 > 0 && code[idx92 - 1] !== GS) {
-    const before92 = code.slice(Math.max(0, idx92 - 8), idx92);
-    if (before92.endsWith(GS + "91EE12")) {
-      code = code.slice(0, idx92) + GS + code.slice(idx92);
-    }
-  }
-  // Валидация: GS91 должен образовывать группу GS91EE12GS92
-  const gs91Idx = code.indexOf(GS + "91", gtinEnd);
-  if (gs91Idx >= 0) {
-    const after91 = code.substring(gs91Idx + 3, gs91Idx + 12);
-    // Структурная проверка: после GS91 идёт EE12, затем GS, затем 92
-    if (!(after91.substring(0, 4) === "EE12" && after91[4] === GS && after91.substring(5, 7) === "92")) {
-      throw new Error(
-        `Некорректный формат КМ: группа после AI 91 должна быть «GS91EE12GS92», ` +
-        `получено «GS91${after91.replace(/\u001d/g, 'GS')}»`
-      );
-    }
-  }
-  return code;
+  // Разделитель GS ставим по структуре КМ, а не по вхождению «91»: иначе GS
+  // попадает внутрь серийного номера, если тот сам содержит цифры 91.
+  const body = pickCZBody(code.slice(1).replace(/\u001d/g, ''));
+  const cz = splitCZBody(body);
+  if (!cz) return code;
+  return FNC1 + body.slice(0, cz.ai91) + GS + body.slice(cz.ai91, cz.ai92) + GS + body.slice(cz.ai92);
 }
 
 async function saveUnit() {

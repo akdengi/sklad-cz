@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 from sqlalchemy import or_
 from app import db
@@ -6,6 +7,12 @@ from app.models import Unit
 
 GS = "\u001d"
 FNC1 = "\xe8"
+
+# Криптохвост AI 92 — base64, фиксированная длина
+_CRYPTO_RE = re.compile(r"[A-Za-z0-9+/=]{44}")
+
+# Серийный номер (AI 21) в КМ — 13 символов
+CZ_SERIAL_LEN = 13
 
 STATUSES = [
     "— не указан —", "Эмитирован", "Нанесен",
@@ -101,9 +108,60 @@ def save_settings(data: dict):
     SETTINGS_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _pick_cz_body(body: str) -> str:
+    """Выбирает между исходным телом КМ и телом с раскрытыми кавычками.
+
+    Серийный номер ЧЗ (AI 21) — 13 символов, и он может содержать две кавычки
+    подряд, поэтому замены «""»→«"» и «\\"»→«"» нельзя делать вслепую: они
+    стирают вторую кавычку и портят код. Раскрытие применяется только тогда,
+    когда оно приближает длину серийного номера к канонической (так приходят
+    экранированные выгрузки), иначе тело остается как есть.
+    """
+    cz = split_cz_body(body)
+    unescaped = body.replace('""', '"').replace('\\"', '"')
+    if unescaped == body:
+        return body
+    cz_unescaped = split_cz_body(unescaped)
+    if cz_unescaped is None:
+        return body
+    if cz is None:
+        return unescaped
+    if abs(len(cz_unescaped["serial"]) - CZ_SERIAL_LEN) < abs(len(cz["serial"]) - CZ_SERIAL_LEN):
+        return unescaped
+    return body
+
+
+def split_cz_body(body: str):
+    """Разбирает тело КМ (без FNC1 и GS) на группы ЧЗ.
+
+    Структура: 01+GTIN(14), 21+серийный номер, 91+ключ(4), 92+криптохвост(44).
+    Позиция AI 91 считается от конца кода, поэтому серийный номер, содержащий
+    цифры «91», разбирается правильно.
+    Возвращает dict с gtin/serial/key/crypto/ai91/ai92 или None.
+    """
+    if len(body) < 70 or not body.startswith("01") or body[16:18] != "21":
+        return None
+    if not body[2:16].isdigit():
+        return None
+    crypto = body[-44:]
+    if not _CRYPTO_RE.fullmatch(crypto):
+        return None
+    ai92 = len(body) - 46
+    ai91 = ai92 - 6  # GS 91 + 4-символьный ключ
+    if ai91 <= 18 or body[ai91:ai91 + 2] != "91" or body[ai92:ai92 + 2] != "92":
+        return None
+    return {
+        "gtin": body[2:16],
+        "serial": body[18:ai91],
+        "key": body[ai91 + 2:ai92],
+        "crypto": crypto,
+        "ai91": ai91,
+        "ai92": ai92,
+    }
+
+
 def normalize_cz(text: str) -> str:
     code = text.strip().strip('"')
-    code = code.replace('""', '"').replace('\\"', '"')
     # Экранированные последовательности → реальные символы
     code = code.replace("\\u001d", GS).replace("\\u001D", GS)
     code = code.replace("\\x1d", GS).replace("\\X1D", GS)
@@ -111,16 +169,10 @@ def normalize_cz(text: str) -> str:
     code = code.replace("\\xe8", FNC1).replace("\\xE8", FNC1)
     code = code.replace("\u241d", GS)
     code = code.replace("\ufffd", FNC1)
-    # Текстовые литералы → реальные символы (порядок важен: сначала较长шие)
+    # Текстовые литералы → реальные символы
     code = code.replace("FNC1", FNC1)
     code = code.replace("\\GS\\", GS).replace("\\gs\\", GS)
-    # Заменяем текстовый "GS" между AI на настоящий GS-символ
-    # Ищем "GS" перед известными AI (01, 21, 91) — 92 обрабатывается условно ниже
-    import re
-    code = re.sub(r'(?<=\d)GS(?=01|21|91)', GS, code)
-    code = re.sub(r'(?<=[A-Za-z0-9+/=])GS(?=01|21|91)', GS, code)
-    # Общая замена оставшихся "GS" которые стоят перед AI (кроме 92 — GS перед 92 добавляется ниже условно)
-    code = re.sub(r'GS(?!92)(?=\d{2})', GS, code)
+    code = re.sub(r'GS(?=\d{2})', GS, code)
     code = code.strip()
     if not code:
         return code
@@ -129,32 +181,23 @@ def normalize_cz(text: str) -> str:
     elif code[0] == GS:
         code = FNC1 + code[1:]
     code = FNC1 + code[1:].replace(FNC1, GS)
-    # Вставляем GS перед "91" если его нет
-    idx91 = code.find("91", 16)
-    if idx91 > 0 and code[idx91 - 1] != GS:
-        code = code[:idx91] + GS + code[idx91:]
-    # Вставляем GS перед "92" ТОЛЬКО если перед ним GS91EE12 (т.е. это AI 92 после AI 91)
-    idx92 = code.find("92", 16)
-    if idx92 > 0 and code[idx92 - 1] != GS:
-        before = code[max(0, idx92 - 8):idx92]
-        if before.endswith(GS + "91EE12"):
-            code = code[:idx92] + GS + code[idx92:]
-    # Валидация: GS91 должен образовывать группу GS91EE12GS92
-    gs91_idx = code.find(GS + "91", 16)
-    if gs91_idx >= 0:
-        after_91 = code[gs91_idx + 3:gs91_idx + 12]
-        # Структурная проверка: после GS91 идёт EE12, затем GS, затем 92
-        if not (after_91[:4] == "EE12" and after_91[4] == GS and after_91[5:7] == "92"):
-            raise ValueError(
-                f"Некорректный формат КМ: группа после AI 91 должна быть «GS91EE12GS92», "
-                f"получено «GS91{after_91.replace(GS, 'GS')}»"
-            )
-    return code
+    # Разделитель GS ставим по структуре КМ, а не по вхождению «91»: иначе GS
+    # попадает внутрь серийного номера, если тот сам содержит цифры 91.
+    body = _pick_cz_body(code[1:].replace(GS, ""))
+    cz = split_cz_body(body)
+    if cz is None:
+        return code
+    return (FNC1 + body[:cz["ai91"]] + GS + body[cz["ai91"]:cz["ai92"]]
+            + GS + body[cz["ai92"]:])
 
 
 def cz_search_prefix(cz_code: str) -> str:
+    """Префикс КМ до AI 91 (01+GTIN, 21+серийник) — по нему ищутся единицы в базе."""
     if not cz_code:
         return cz_code
+    cz = split_cz_body(cz_code.replace(FNC1, "").replace(GS, ""))
+    if cz is not None:
+        return FNC1 + "01" + cz["gtin"] + "21" + cz["serial"]
     idx = cz_code.find("91", 16)
     if idx > 0:
         return cz_code[:idx]
