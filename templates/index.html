@@ -483,6 +483,17 @@ body { background: #f0f2f5; }
     </div>
     <div class="col-md-6">
       <div class="card"><div class="card-body">
+        <h5 class="card-title mb-3"><i class="bi bi-slash-circle"></i> Чёрный список покупателей Озон</h5>
+        <p class="small text-muted mb-2">Коды покупателей из номеров заказов Озон (часть до первого дефиса), по одному в строке. При продаже товара по заказу с таким кодом будет выдано предупреждение.</p>
+        <textarea class="form-control form-control-sm font-monospace" id="ozon-blacklist" rows="6" placeholder="38639631&#10;12345678"></textarea>
+        <div class="d-flex gap-2 align-items-center mt-2">
+          <button class="btn btn-primary btn-sm" onclick="saveOzonBlacklist()"><i class="bi bi-check-lg"></i> Сохранить</button>
+          <span id="ozon-blacklist-status" class="small"></span>
+        </div>
+      </div></div>
+    </div>
+    <div class="col-md-6">
+      <div class="card"><div class="card-body">
         <h5 class="card-title mb-3"><i class="bi bi-gear"></i> Экспорт / Импорт данных</h5>
         <div class="d-flex gap-2 flex-wrap">
           <button class="btn btn-primary" onclick="exportJSON()"><i class="bi bi-download"></i> Экспорт JSON</button>

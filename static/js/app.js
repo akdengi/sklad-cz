@@ -97,6 +97,7 @@ let cachedWarehouses = [];
 let cachedDefaultAddress = '';
 let cachedDefaultFias = '';
 let qsCart = [];
+let ozonBlacklist = []; // чёрный список покупателей Озон (settings.json), загружается в loadCZSettings()
 let stockPage = 1, soldPage = 1, disposalPage = 1;
 const PER_PAGE = 100;
 const selectedUnits = { stock: new Set(), sold: new Set(), disposal: new Set() };
@@ -1603,6 +1604,14 @@ async function submitCart() {
   if (!orderNumber) { toast('Введите номер заказа', 'error'); return; }
   if (!targetWh) { toast('Выберите склад', 'error'); return; }
 
+  // Чёрный список покупателей Озон: код покупателя — часть номера заказа до первого дефиса
+  const ozonCode = orderNumber.split('-')[0].trim();
+  if (ozonCode && ozonBlacklist.length > 0 && ozonBlacklist.includes(ozonCode)) {
+    if (!confirm(`ВНИМАНИЕ: покупатель Озон ${ozonCode} в чёрном списке!\n\nЗаказ: ${orderNumber}\n\nТочно оформить этот заказ?`)) {
+      return;
+    }
+  }
+
   btn.disabled = true;
   btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Обработка...';
 
@@ -2413,6 +2422,8 @@ async function loadCZSettings() {
     document.getElementById('cz-inn').value = s.cz_inn || '';
     document.getElementById('cz-key-pin').value = s.cz_key_pin || '';
     document.getElementById('product-group').value = s.product_group || '27';
+    document.getElementById('ozon-blacklist').value = (s.ozon_buyer_blacklist || []).join('\n');
+    ozonBlacklist = s.ozon_buyer_blacklist || [];
     const url = s.cz_api_url || '';
     const sel = document.getElementById('cz-api-url-select');
     if (sel) {
@@ -2452,11 +2463,22 @@ async function fetchMOD() {
   btn.innerHTML = '<i class="bi bi-cloud-download"></i> Получить данные МОД из ЧЗ';
 }
 
+async function saveOzonBlacklist() {
+  const data = { ozon_buyer_blacklist: document.getElementById('ozon-blacklist').value.split('\n').map(s => s.trim()).filter(Boolean) };
+  try {
+    await api('/api/settings/cz', { method: 'POST', body: JSON.stringify(data) });
+    ozonBlacklist = data.ozon_buyer_blacklist;
+    document.getElementById('ozon-blacklist-status').innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> Сохранено</span>';
+    toast('Чёрный список сохранён', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
 async function saveCZSettings() {
   const data = {
     default_disposal_address: document.getElementById('cz-default-address').value.trim(),
     default_disposal_fias_id: document.getElementById('cz-default-fias').value.trim(),
     product_group: document.getElementById('product-group').value,
+    ozon_buyer_blacklist: document.getElementById('ozon-blacklist').value.split('\n').map(s => s.trim()).filter(Boolean),
   };
   try {
     await api('/api/settings/cz', { method: 'POST', body: JSON.stringify(data) });

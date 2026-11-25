@@ -51,6 +51,7 @@ def get_cz_settings():
         "default_disposal_address": s.get("default_disposal_address", ""),
         "default_disposal_fias_id": s.get("default_disposal_fias_id", ""),
         "product_group": s.get("product_group", DEFAULT_PRODUCT_GROUP),
+        "ozon_buyer_blacklist": s.get("ozon_buyer_blacklist", []),
     })
 
 
@@ -74,6 +75,8 @@ def set_cz_settings():
         s["default_disposal_fias_id"] = data["default_disposal_fias_id"]
     if "product_group" in data:
         s["product_group"] = data["product_group"]
+    if "ozon_buyer_blacklist" in data:
+        s["ozon_buyer_blacklist"] = [str(c).strip() for c in data["ozon_buyer_blacklist"] if str(c).strip()]
     save_settings(s)
     return jsonify({"ok": True, "has_token": bool(s.get("cz_api_token"))})
 
